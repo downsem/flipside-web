@@ -1,49 +1,98 @@
+// src/app/page.tsx
 "use client";
-import { useEffect, useState } from "react";
-import { collection, query, onSnapshot, orderBy } from "firebase/firestore";
-import { db } from "./firebase";
-import FlipCard, { type FlipPost } from "../components/FlipCard";
+
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { db } from "./firebase"; // adjust the path if your firebase file lives elsewhere
+import {
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  limit,
+  Timestamp,
+} from "firebase/firestore";
+import PostCard from "../components/PostCard";
+
+type Post = {
+  id: string;
+  originalText: string;
+  authorId: string;
+  createdAt?: Timestamp | null;
+};
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ||
+  "https://flipside.fly.dev";
 
 export default function HomePage() {
-  const [posts, setPosts] = useState<FlipPost[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    const q = query(
+      collection(db, "posts"),
+      orderBy("createdAt", "desc"),
+      limit(50)
+    );
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const arr: FlipPost[] = [];
-        snap.forEach((doc) => arr.push({ id: doc.id, ...(doc.data() as any) }));
-        setPosts(arr);
+        const rows: Post[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            originalText: data.originalText || "",
+            authorId: data.authorId || "",
+            createdAt: data.createdAt ?? null,
+          };
+        });
+        setPosts(rows);
         setLoading(false);
       },
       (err) => {
-        setError(err.message);
+        console.error("Feed subscription failed:", err);
         setLoading(false);
       }
     );
     return () => unsub();
   }, []);
 
+  const hasPosts = posts.length > 0;
+
   return (
-    <main className="max-w-3xl mx-auto p-4 md:p-6 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">FlipSide</h1>
-        <a href="/add" className="px-4 py-2 rounded-xl bg-black text-white hover:bg-gray-800">
+    <main className="max-w-3xl mx-auto p-4 md:p-6">
+      {/* Header */}
+      <header className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold">FlipSide</h1>
+        <Link
+          href="/add"
+          className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800"
+        >
           Add Flip
-        </a>
+        </Link>
       </header>
 
-      {loading && <div className="text-gray-500">Loading feed...</div>}
-      {error && <div className="text-red-600 p-4 border border-red-200 rounded-lg"><strong>Error:</strong> {error}</div>}
-
-      {!loading && !error && posts.length === 0 && (
-        <div className="text-gray-500 text-center py-10">No posts yet. Be the first to add one!</div>
+      {/* Feed */}
+      {loading && (
+        <div className="text-gray-500 text-sm">Loading feed…</div>
       )}
 
-      {posts.map((p) => (<FlipCard key={p.id} post={p} />))}
+      {!loading && !hasPosts && (
+        <div className="text-gray-500 text-sm">
+          No posts yet. Be the first to{" "}
+          <Link href="/add" className="underline">
+            add one
+          </Link>
+          !
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {posts.map((post) => (
+          <PostCard key={post.id} post={post} apiBase={API_BASE} />
+        ))}
+      </div>
     </main>
   );
 }

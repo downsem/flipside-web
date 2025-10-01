@@ -1,12 +1,14 @@
 "use client";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { auth, db, serverTimestamp } from "../firebase";
+import { auth, db, serverTimestamp } from "../firebase"; // keep this path as in your project
 import { useAuthState } from "react-firebase-hooks/auth";
 import { collection, addDoc } from "firebase/firestore";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+const API_BASE =
+  (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000").replace(/\/$/, "");
 const TEXT_MAX = 1000; // character limit
 
 export default function AddFlipPage() {
@@ -14,19 +16,31 @@ export default function AddFlipPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Firebase Auth state (react-firebase-hooks)
   const [user, loading, authError] = useAuthState(auth);
 
-  // Ensure anon auth is established
+  // Ensure anonymous auth is established on mount
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
-      if (!u) signInAnonymously(auth).catch((e) => console.error("Anon sign-in failed", e));
+      if (!u) {
+        signInAnonymously(auth).catch((e) => {
+          console.error("Anon sign-in failed", e);
+        });
+      }
     });
     return () => unsub();
   }, []);
 
   const remaining = useMemo(() => TEXT_MAX - text.length, [text]);
   const overLimit = remaining < 0;
-  const canSubmit = !loading && !submitting && !!user && text.trim().length > 0 && !overLimit;
+
+  const canSubmit =
+    !loading &&
+    !submitting &&
+    !!user &&
+    text.trim().length > 0 &&
+    !overLimit;
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setText(e.target.value);
@@ -39,9 +53,10 @@ export default function AddFlipPage() {
     setSuccess(null);
 
     if (!user) {
-      setError("Not signed in. Please refresh the page.");
+      setError("Not signed in (anonymous). Please wait a moment and try again.");
       return;
     }
+
     const original = text.trim();
     if (!original) {
       setError("Please write something first.");
@@ -55,9 +70,9 @@ export default function AddFlipPage() {
     try {
       setSubmitting(true);
 
-      // Fetch with a timeout to avoid hanging
+      // 1) Get a calm rewrite from the API (compat route)
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20_000);
+      const timeout = setTimeout(() => controller.abort(), 20000);
 
       const r = await fetch(`${API_BASE}/filter`, {
         method: "POST",
@@ -65,27 +80,30 @@ export default function AddFlipPage() {
         body: JSON.stringify({ originalText: original }),
         signal: controller.signal,
       }).catch((e) => {
-        // Turn AbortError into a friendlier message
-        if (e?.name === "AbortError") throw new Error("The server took too long to respond. Please try again.");
+        if (e?.name === "AbortError")
+          throw new Error("The server took too long to respond. Please try again.");
         throw e;
       });
+
       clearTimeout(timeout);
 
       if (!r || !r.ok) {
         const msg = r ? await r.text() : "Network error";
         throw new Error(`Filter service error: ${msg}`);
       }
+
       const { filteredText } = (await r.json()) as { filteredText: string };
 
+      // 2) Save to Firestore — MUST match your security rules
       await addDoc(collection(db, "posts"), {
         originalText: original,
         filteredText: filteredText || original, // fallback just in case
-        authorId: user.uid,
+        authorId: user.uid,                      // must equal request.auth.uid
         createdAt: serverTimestamp(),
+        // promptUsed: "Calm-Constructive"       // Optional — allowed by rules if you want to store it
       });
 
       setSuccess("Posted! Redirecting to the feed…");
-      // Small pause so user sees confirmation
       setTimeout(() => (window.location.href = "/"), 700);
     } catch (err: any) {
       console.error("Submit failed:", err);
@@ -98,7 +116,16 @@ export default function AddFlipPage() {
   return (
     <main className="max-w-3xl mx-auto p-4 md:p-6">
       <header className="flex items-center gap-3 mb-6">
-        <Link href="/" className="text-gray-500 hover:text-gray-800">&larr; Back to Feed</Link>
+        <Link href="/" className="text-gray-500 hover:text-gray-800">
+          &larr; Back to Feed
+        </Link>
+        <div className="ml-auto text-xs text-gray-500">
+          {loading
+            ? "Signing you in…"
+            : user
+            ? `Signed in (anon) • ${user.uid.slice(0, 6)}…`
+            : "Not signed in"}
+        </div>
       </header>
 
       <h1 className="text-3xl font-bold mb-6">Add a Flip</h1>
@@ -109,13 +136,17 @@ export default function AddFlipPage() {
           placeholder="Vent here…"
           value={text}
           onChange={handleChange}
-          maxLength={TEXT_MAX + 500} // allow a bit over, we enforce ourselves
+          maxLength={TEXT_MAX + 500} // allow a bit over; we enforce ourselves
         />
         <div className="flex items-center justify-between text-sm">
           <span className={overLimit ? "text-red-600" : "text-gray-500"}>
-            {remaining >= 0 ? `${remaining} characters left` : `${-remaining} over the limit`}
+            {remaining >= 0
+              ? `${remaining} characters left`
+              : `${-remaining} over the limit`}
           </span>
-          {!user && !loading && <span className="text-red-600">Not signed in</span>}
+          {!user && !loading && (
+            <span className="text-red-600">Not signed in</span>
+          )}
         </div>
 
         <div className="flex items-center gap-4">
@@ -127,7 +158,6 @@ export default function AddFlipPage() {
             {submitting ? "Submitting…" : "Submit"}
           </button>
 
-          {/* Inline messages */}
           {error && (
             <span role="alert" aria-live="assertive" className="text-red-600">
               {error}
