@@ -1,6 +1,4 @@
 // src/utils/prompts.ts
-
-// These keys MUST match your backend prompt IDs exactly.
 export type PromptKey =
   | "Calm-Constructive"
   | "Balanced-Bridge"
@@ -12,10 +10,9 @@ export type PromptKey =
 
 export type FlipPrompt = {
   key: PromptKey;
-  label: string;       // shown in UI
-  // kept for forward-compat; backend currently ignores these
-  system: string;
-  userPrefix: string;
+  label: string;      // not shown in the card anymore, but we keep it for tooling
+  system: string;     // future server-side use
+  userPrefix: string; // future server-side use
 };
 
 export const PROMPTS: FlipPrompt[] = [
@@ -23,53 +20,49 @@ export const PROMPTS: FlipPrompt[] = [
     key: "Calm-Constructive",
     label: "Calm & Constructive",
     system:
-      "Rewrite the user's text so it is calm, non-toxic, and constructive. Preserve the core point, remove hostility and slurs, keep it concise.",
-    userPrefix: "Rewrite this to be calm, non-toxic, and constructive:\n\n",
+      "Rewrite the user's text so it is calm, non-toxic, and constructive while preserving the core point.",
+    userPrefix: "Rewrite calmly and constructively:\n\n",
   },
   {
     key: "Balanced-Bridge",
     label: "Balanced Bridge",
     system:
-      "Rewrite to acknowledge the original concern AND the other side’s strongest concerns. Aim for a bridge-building tone that suggests a pragmatic compromise.",
-    userPrefix:
-      "Acknowledge their core concern and the other side's best concern; propose a pragmatic bridge:\n\n",
+      "Acknowledge the original concern and the other side’s strongest concern, offering a bridge-building idea.",
+    userPrefix: "Acknowledge both sides and offer a bridge:\n\n",
   },
   {
     key: "Direct-But-Civil",
     label: "Direct but Civil",
     system:
-      "Rewrite to keep a firm stance, but stay civil and avoid ad hominem. Be clear, specific, and respectful.",
-    userPrefix: "Keep the stance firm but civil and specific:\n\n",
+      "Keep a firm stance but remain civil and specific. Avoid ad hominem.",
+    userPrefix: "Restate directly but civilly:\n\n",
   },
   {
     key: "Opposite",
     label: "Opposite",
     system:
-      "Write a concise argument that takes the directly opposing conclusion to the user's text. Do not straw-man; use the opponent’s best facts/logic. No insults.",
-    userPrefix: "Argue the opposite position fairly and succinctly:\n\n",
+      "Take the directly opposing conclusion using the other side’s best facts/logic. No insults.",
+    userPrefix: "Present the best opposite case:\n\n",
   },
   {
     key: "Opposite-Matched-Tone",
     label: "Opposite (Matched Tone)",
     system:
-      "Write a concise opposite-position response that MATCHES the user's intensity and voice style (e.g., blunt, emphatic) BUT avoids slurs and direct personal insults. Keep it punchy.",
-    userPrefix:
-      "Argue the opposite position in the same tone/energy (no slurs/insults):\n\n",
+      "Argue the opposite with the same energy/tone (blunt/emphatic), but without slurs/abuse.",
+    userPrefix: "Opposite view in matched tone:\n\n",
   },
   {
     key: "Steelman-Opposition",
-    label: "Steelman (Opposition)",
+    label: "Steelman Opposition",
     system:
-      "Produce the strongest, fairest version of the opposing view (a steelman). Use the most compelling reasons/values the other side would cite, succinctly.",
-    userPrefix:
-      "Steelman the opposing view with its strongest reasons/values:\n\n",
+      "Produce the strongest, fairest version of the opposing view (a steelman).",
+    userPrefix: "Steelman the opposition:\n\n",
   },
   {
     key: "Principle-Inversion",
     label: "Principle Inversion",
     system:
-      "Identify the key principle the user relies on. Now invert or reprioritize that principle to reach the opposite conclusion. Keep it clear and reasoned, not hostile.",
-    userPrefix:
-      "Identify the core principle, then invert/reprioritize it to reach the opposite conclusion:\n\n",
+      "Identify the key principle and invert or reprioritize it to reach the opposite conclusion.",
+    userPrefix: "Invert the governing principle:\n\n",
   },
 ];
