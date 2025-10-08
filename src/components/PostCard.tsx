@@ -25,18 +25,23 @@ export default function PostCard({ post, apiBase }: Props) {
   const userId = user?.uid || "anon";
 
   return (
-    <div className="rounded-3xl border p-4 bg-white shadow-sm">
+    <div
+      className="rounded-3xl border p-4 bg-white shadow-sm overscroll-contain tap-transparent"
+    >
       <SwipeDeck
-        // ❌ postId was not a prop on SwipeDeck, so we remove it
         originalText={post.originalText}
         apiBase={apiBase}
-        onVote={async ({ index, key, value, text }: {
+        onVote={async ({
+          index,
+          key,
+          value,
+          text,
+        }: {
           index: number;
           key: PromptKey | "original";
           value: "up" | "down" | null;
           text: string;
         }) => {
-          // Only persist actual votes (ignore null => de-selected)
           if (!value) return;
           await saveFlipVote({
             postId: post.id,
@@ -47,11 +52,16 @@ export default function PostCard({ post, apiBase }: Props) {
             userId,
           });
         }}
-        onReply={async ({ index, key, text, flipText }: {
+        onReply={async ({
+          index,
+          key,
+          text,
+          flipText,
+        }: {
           index: number;
           key: PromptKey | "original";
-          text: string;      // reply body
-          flipText: string;  // the flip/original text being replied to
+          text: string;
+          flipText: string;
         }) => {
           await saveFlipReply({
             postId: post.id,

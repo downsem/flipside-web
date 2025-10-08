@@ -3,3 +3,9 @@
 @tailwind utilities;
 
 html, body { height: 100%; }
+
+/* Swipe comfort helpers */
+.touch-pan-y { touch-action: pan-y; }           /* allow vertical scroll, block horizontal UA gestures */
+.touch-none  { touch-action: none; }            /* block UA gesture handling entirely */
+.overscroll-contain { overscroll-behavior: contain; }  /* no rubber-banding from this container */
+.tap-transparent { -webkit-tap-highlight-color: transparent; } /* remove iOS tap flash */

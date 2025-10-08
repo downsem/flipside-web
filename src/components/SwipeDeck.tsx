@@ -1,30 +1,31 @@
 // src/components/SwipeDeck.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { PROMPTS, type PromptKey } from "../utils/prompts";
 
-type GeneratedFlip = {
-  key: PromptKey;
-  text: string;
-};
+type GeneratedFlip = { key: PromptKey; text: string };
 
 type Props = {
   originalText: string;
   apiBase: string; // NEXT_PUBLIC_API_BASE
   onVote?: (args: {
-    index: number;                                    // -1 for original
-    key: PromptKey | "original";                      // "original" for the source post
+    index: number;                   // -1 for original
+    key: PromptKey | "original";
     value: "up" | "down" | null;
-    text: string;                                     // the text that was voted on
+    text: string;
   }) => Promise<void> | void;
   onReply?: (args: {
-    index: number;                                    // -1 for original
-    key: PromptKey | "original";                      // "original" for the source post
-    text: string;                                     // reply body
-    flipText: string;                                 // the text being replied to
+    index: number;                   // -1 for original
+    key: PromptKey | "original";
+    text: string;                    // reply body
+    flipText: string;                // the text being replied to
   }) => Promise<void> | void;
 };
+
+const SWIPE_THRESHOLD_PX = 48;
+const MAX_TINT_OPACITY = 0.35;
+const MAX_ROTATE_DEG = 8;
 
 export default function SwipeDeck({
   originalText,
@@ -40,9 +41,9 @@ export default function SwipeDeck({
   const [votes, setVotes] = useState<Record<number, "up" | "down" | null>>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<number, string>>({});
 
-  // votes/replies for the ORIGINAL post
+  // ORIGINAL votes/replies
   const [originalVote, setOriginalVote] = useState<"up" | "down" | null>(null);
-  const [originalReply, setOriginalReply] = useState<string>("");
+  const [originalReply, setOriginalReply] = useState("");
 
   const [err, setErr] = useState<string | null>(null);
   const [showOriginal, setShowOriginal] = useState(true); // start on original
@@ -51,12 +52,20 @@ export default function SwipeDeck({
   const haveFlips = count > 0;
   const current = flips[index];
 
-  const promptKeys = useMemo<PromptKey[]>(
-    () => PROMPTS.map((p) => p.key),
-    []
-  );
+  const promptKeys = useMemo<PromptKey[]>(() => PROMPTS.map((p) => p.key), []);
+
+  // --- gesture / animation state ---
+  const startX = useRef<number | null>(null);
+  const deltaRef = useRef(0); // logic
+  const [dragX, setDragX] = useState(0); // visuals
+  const [dragging, setDragging] = useState(false);
+
+  const generatingRef = useRef(false);
 
   async function generateAll() {
+    if (generatingRef.current) return;
+    generatingRef.current = true;
+
     setErr(null);
     setPhase("loading");
     try {
@@ -67,9 +76,7 @@ export default function SwipeDeck({
       });
       if (!res.ok) {
         const msg = await res.text().catch(() => "");
-        throw new Error(
-          `API returned ${res.status}${msg ? `: ${msg}` : ""}`.trim()
-        );
+        throw new Error(`API returned ${res.status}${msg ? `: ${msg}` : ""}`.trim());
       }
       const data = (await res.json()) as {
         flips: { promptKind: string; text: string }[];
@@ -89,47 +96,39 @@ export default function SwipeDeck({
 
       setFlips(ordered);
       setIndex(0);
-      setVotes({});           // neutral by default
+      setVotes({});
       setReplyDrafts({});
       setPhase("showing");
-      setShowOriginal(false); // jump right to first flip
+      setShowOriginal(false); // jump straight to first flip
     } catch (e: any) {
       setErr(e?.message || "Failed to generate flips");
       setPhase("idle");
       setShowOriginal(true);
+    } finally {
+      generatingRef.current = false;
     }
   }
 
   function advance() {
     if (!haveFlips) return;
-    setIndex((i) => ((i + 1) % count));
+    setIndex((i) => (i + 1) % count);
   }
 
-  // ---- voting ----
+  // ---- voting helpers ----
   async function setVoteFlip(value: "up" | "down") {
     if (!haveFlips) return;
-    const next = votes[index] === value ? null : value; // toggle
+    const next = votes[index] === value ? null : value;
     setVotes((v) => ({ ...v, [index]: next }));
     try {
-      await onVote?.({
-        index,
-        key: current.key,
-        value: next,
-        text: current.text,
-      });
+      await onVote?.({ index, key: current.key, value: next, text: current.text });
     } catch {}
   }
 
   async function setVoteOriginal(value: "up" | "down") {
-    const next = originalVote === value ? null : value; // toggle
+    const next = originalVote === value ? null : value;
     setOriginalVote(next);
     try {
-      await onVote?.({
-        index: -1,
-        key: "original",
-        value: next,
-        text: originalText,
-      });
+      await onVote?.({ index: -1, key: "original", value: next, text: originalText });
     } catch {}
   }
 
@@ -144,12 +143,7 @@ export default function SwipeDeck({
     const draft = (replyDrafts[index] || "").trim();
     if (!draft) return;
     try {
-      await onReply?.({
-        index,
-        key: current.key,
-        text: draft,
-        flipText: current.text,
-      });
+      await onReply?.({ index, key: current.key, text: draft, flipText: current.text });
       setReplyDrafts((m) => ({ ...m, [index]: "" }));
     } catch {}
   }
@@ -158,46 +152,135 @@ export default function SwipeDeck({
     const draft = originalReply.trim();
     if (!draft) return;
     try {
-      await onReply?.({
-        index: -1,
-        key: "original",
-        text: draft,
-        flipText: originalText,
-      });
+      await onReply?.({ index: -1, key: "original", text: draft, flipText: originalText });
       setOriginalReply("");
     } catch {}
   }
 
-  // --- UI ---
+  // ---- gestures (with visuals) ----
+  function onTouchStart(e: React.TouchEvent) {
+    startX.current = e.touches[0].clientX;
+    deltaRef.current = 0;
+    setDragX(0);
+    setDragging(true);
+  }
+  function onTouchMove(e: React.TouchEvent) {
+    if (startX.current == null) return;
+    const d = e.touches[0].clientX - startX.current;
+    deltaRef.current = d;
+    setDragX(d);
+  }
+  function resetDrag() {
+    setDragging(false);
+    setDragX(0);
+    deltaRef.current = 0;
+  }
+  function onTouchEnd() {
+    const delta = deltaRef.current;
+    const passed = Math.abs(delta) >= SWIPE_THRESHOLD_PX;
 
-  const cardText = showOriginal ? originalText : (current?.text ?? "");
+    // allow snap-back via CSS transition
+    resetDrag();
+
+    if (!passed) return;
+
+    if (showOriginal) {
+      // ORIGINAL: vote + generate/show first flip
+      if (delta > 0) setVoteOriginal("up");
+      else setVoteOriginal("down");
+
+      if (haveFlips) setShowOriginal(false);
+      else generateAll();
+      return;
+    }
+
+    // FLIP: vote + advance
+    if (haveFlips) {
+      if (delta > 0) setVoteFlip("up");
+      else setVoteFlip("down");
+      advance();
+    }
+  }
+
+  // Card visuals
+  const cardText = showOriginal ? originalText : current?.text ?? "";
+  const dragMagnitude = Math.min(1, Math.abs(dragX) / 160);
+  const rotate =
+    Math.max(-1, Math.min(1, dragX / 160)) * MAX_ROTATE_DEG;
+  const tintOpacity = Math.min(dragMagnitude, MAX_TINT_OPACITY);
+
+  const cardTransform = `translateX(${dragX}px) rotate(${rotate.toFixed(2)}deg)`;
+  const cardTransition = dragging ? "transform 0ms" : "transform 180ms ease-out";
 
   return (
-    <div className="mt-3 space-y-3">
-      {/* Card — only advances when viewing a flip */}
+    <div className="mt-3 space-y-3 overscroll-contain tap-transparent">
+      {/* Card with animated transform / tint / emoji overlay */}
       <div
-        className={`rounded-2xl border bg-white p-4 shadow-sm select-none ${
-          showOriginal ? "" : "cursor-pointer"
-        }`}
-        onClick={() => {
-          if (!showOriginal) advance();
+        className="relative rounded-2xl border bg-white p-4 shadow-sm select-none touch-none"
+        style={{
+          transform: cardTransform,
+          transition: cardTransition,
+          WebkitUserSelect: "none",
+          userSelect: "none",
         }}
+        onClick={() => {
+          if (showOriginal) {
+            if (haveFlips) setShowOriginal(false);
+            else generateAll();
+          } else {
+            advance();
+          }
+        }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={resetDrag}
         role="button"
         aria-label="Flip text card"
       >
+        {/* tint layer */}
+        <div
+          className="pointer-events-none absolute inset-0 rounded-2xl"
+          style={{
+            backgroundColor:
+              dragX > 0
+                ? "rgb(220 252 231)" // green-50
+                : dragX < 0
+                ? "rgb(254 226 226)" // red-50
+                : "transparent",
+            opacity: tintOpacity,
+          }}
+        />
+        {/* emoji badges */}
+        <div
+          className="pointer-events-none absolute left-3 top-2 text-3xl"
+          style={{ opacity: dragX < 0 ? Math.min(Math.abs(dragX) / 120, 0.9) : 0 }}
+        >
+          👎
+        </div>
+        <div
+          className="pointer-events-none absolute right-3 top-2 text-3xl"
+          style={{ opacity: dragX > 0 ? Math.min(Math.abs(dragX) / 120, 0.9) : 0 }}
+        >
+          👍
+        </div>
+
         {showOriginal && (
           <div className="text-[11px] uppercase tracking-wide text-gray-400 mb-2">
             Original post
           </div>
         )}
-        <div className="text-base leading-relaxed whitespace-pre-wrap">
+        <div className="text-base leading-relaxed whitespace-pre-wrap relative">
           {cardText}
         </div>
+
+        {phase === "loading" && showOriginal && (
+          <div className="mt-2 text-xs text-gray-500">Generating flips…</div>
+        )}
       </div>
 
       {/* Controls */}
       <div className="flex items-center gap-3">
-        {/* Votes shown on BOTH original and flips */}
         {showOriginal ? (
           <>
             <button
@@ -250,19 +333,7 @@ export default function SwipeDeck({
 
         <div className="ml-auto" />
 
-        {/* When on original and no flips yet: CTA to generate */}
-        {showOriginal && !haveFlips && phase !== "loading" && (
-          <button
-            onClick={generateAll}
-            className="rounded-full bg-black text-white px-3 py-1.5 text-sm hover:bg-gray-800"
-            type="button"
-          >
-            See the flips
-          </button>
-        )}
-
-        {/* When on original and flips already exist: go back to current flip */}
-        {showOriginal && haveFlips && (
+        {haveFlips && showOriginal && (
           <button
             onClick={() => setShowOriginal(false)}
             className="rounded-full border px-3 py-1.5 text-sm hover:bg-neutral-50"
@@ -271,9 +342,7 @@ export default function SwipeDeck({
             Back to Flip
           </button>
         )}
-
-        {/* When on a flip: allow returning to original */}
-        {!showOriginal && haveFlips && (
+        {haveFlips && !showOriginal && (
           <button
             onClick={() => setShowOriginal(true)}
             className="rounded-full border px-3 py-1.5 text-sm hover:bg-neutral-50"
@@ -284,7 +353,7 @@ export default function SwipeDeck({
         )}
       </div>
 
-      {/* Reply inputs for ORIGINAL vs FLIP */}
+      {/* Replies */}
       {showOriginal ? (
         <div className="mt-1 flex items-center gap-2">
           <input
@@ -323,16 +392,12 @@ export default function SwipeDeck({
         )
       )}
 
-      {/* Progress + hint (only for flips) */}
       {!showOriginal && haveFlips && (
-        <div className="text-xs text-gray-500">
-          {index + 1} / {count} &nbsp;•&nbsp; Tap the card to see the next flip
+        <div className="text-xs text-gray-500" aria-live="polite">
+          {index + 1} / {count} &nbsp;•&nbsp; Swipe ← for 👎, → for 👍, tap to skip
         </div>
       )}
 
-      {phase === "loading" && (
-        <div className="text-sm text-gray-600">Generating flips…</div>
-      )}
       {err && <div className="text-sm text-red-600">Error: {err}</div>}
     </div>
   );
