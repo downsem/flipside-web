@@ -1,0 +1,357 @@
+diff --git a/src/theme/timelines.ts b/src/theme/timelines.ts
+new file mode 100644
+--- /dev/null
++++ b/src/theme/timelines.ts
+@@
++export type TimelineId = "calm" | "bridge" | "cynical" | "opposite" | "playful";
++
++export type TimelineSpec = {
++  id: TimelineId;
++  label: string;
++  icon: string;
++  prompt: string;
++  colors: { bg: string; accent: string; text: string; patternOpacity?: number };
++  assets: { shapeSvg: string; lottie?: string; pattern?: string };
++  motion: {
++    enter?: { opacity?: number; scale?: number };
++    animate?: { opacity?: number; scale?: number };
++    transition?: { type?: string; stiffness?: number; damping?: number; duration?: number };
++    swipeRightEffect?: "burst" | "confetti" | "flip" | "glow" | "merge";
++  };
++  haptics?: { pattern?: number[] };
++  sound?: { src?: string; volume?: number };
++};
++
++export const TIMELINES: Record<TimelineId, TimelineSpec> = {
++  calm: {
++    id: "calm",
++    label: "Calm-Constructive",
++    icon: "🕊",
++    prompt:
++      "Rewrite the user’s text so it is calm, non-toxic, and constructive. Preserve the core point, remove hostility and slurs, keep it concise.",
++    colors: { bg: "#B7E2F6", accent: "#F5F9FB", text: "#1E2A32", patternOpacity: 0.06 },
++    assets: { shapeSvg: "/shapes/calm.svg", pattern: "/patterns/calm.svg" },
++    motion: { enter: { opacity: 0, scale: 0.98 }, animate: { opacity: 1, scale: 1 }, transition: { type: "spring", stiffness: 60, damping: 14 }, swipeRightEffect: "glow" },
++    haptics: { pattern: [10] },
++    sound: { src: "/sounds/chime.mp3", volume: 0.25 },
++  },
++  bridge: {
++    id: "bridge",
++    label: "Balanced-Bridge",
++    icon: "⚖️",
++    prompt:
++      "Rewrite to acknowledge the original concern AND the other side’s strongest concerns. Aim for a bridge-building tone that suggests a pragmatic compromise.",
++    colors: { bg: "#C3D9B0", accent: "#F4EBD0", text: "#283028", patternOpacity: 0.08 },
++    assets: { shapeSvg: "/shapes/bridge.svg", pattern: "/patterns/bridge.svg" },
++    motion: { enter: { opacity: 0, scale: 0.98 }, animate: { opacity: 1, scale: 1 }, transition: { type: "spring", stiffness: 70, damping: 16 }, swipeRightEffect: "merge" },
++    haptics: { pattern: [8, 30, 8] },
++    sound: { src: "/sounds/wood-click.mp3", volume: 0.25 },
++  },
++  cynical: {
++    id: "cynical",
++    label: "Cynical-Wit",
++    icon: "😏",
++    prompt:
++      "Rewrite the user’s text with dry humor and sharp skepticism. Keep it concise, clever, and grounded in truth—never cruel, but knowingly ironic.",
++    colors: { bg: "#121212", accent: "#A5FF00", text: "#F5F5F5", patternOpacity: 0.06 },
++    assets: { shapeSvg: "/shapes/cynical.svg", pattern: "/patterns/cynical.svg" },
++    motion: { enter: { opacity: 0, scale: 0.98 }, animate: { opacity: 1, scale: 1 }, transition: { type: "spring", stiffness: 80, damping: 15 }, swipeRightEffect: "burst" },
++    haptics: { pattern: [12] },
++    sound: { src: "/sounds/metal-click.mp3", volume: 0.28 },
++  },
++  opposite: {
++    id: "opposite",
++    label: "Opposite-Perspective",
++    icon: "↔️",
++    prompt:
++      "Write a concise argument that takes the directly opposing conclusion to the user’s text. Don’t straw-man—use the opponent’s best facts and reasoning. No insults.",
++    colors: { bg: "#C0392B", accent: "#FFF7F3", text: "#2B1A1A", patternOpacity: 0.06 },
++    assets: { shapeSvg: "/shapes/opposite.svg", pattern: "/patterns/opposite.svg" },
++    motion: { enter: { opacity: 0, scale: 0.98 }, animate: { opacity: 1, scale: 1 }, transition: { type: "spring", stiffness: 75, damping: 16 }, swipeRightEffect: "flip" },
++    haptics: { pattern: [18] },
++    sound: { src: "/sounds/whoosh.mp3", volume: 0.25 },
++  },
++  playful: {
++    id: "playful",
++    label: "Playful-Satirical",
++    icon: "🎈",
++    prompt:
++      "Rewrite the user’s text with light satire or absurd humor. Keep the meaning recognizable but exaggerate slightly for comic effect. Fun, not mean.",
++    colors: { bg: "#D9B3FF", accent: "#FF69B4", text: "#2D0030", patternOpacity: 0.08 },
++    assets: { shapeSvg: "/shapes/playful.svg", pattern: "/patterns/playful.svg" },
++    motion: { enter: { opacity: 0, scale: 0.98 }, animate: { opacity: 1, scale: 1 }, transition: { type: "spring", stiffness: 60, damping: 12 }, swipeRightEffect: "confetti" },
++    haptics: { pattern: [6, 40, 6, 40, 6] },
++    sound: { src: "/sounds/pop.mp3", volume: 0.22 },
++  },
++};
+diff --git a/src/context/ThemeContext.tsx b/src/context/ThemeContext.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/context/ThemeContext.tsx
+@@
++"use client";
++import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
++import { TIMELINES, TimelineId, TimelineSpec } from "@/theme/timelines";
++type ThemeCtx = { timelineId: TimelineId; theme: TimelineSpec; setTimeline: (id: TimelineId) => void; };
++const ThemeContext = createContext<ThemeCtx | null>(null);
++const DEFAULT_TIMELINE: TimelineId = "calm";
++const STORAGE_KEY = "flipside.timelineId";
++export function ThemeProvider({ children }: { children: React.ReactNode }) {
++  const [timelineId, setTimelineId] = useState<TimelineId>(DEFAULT_TIMELINE);
++  useEffect(() => {
++    const saved = (typeof window !== "undefined" && localStorage.getItem(STORAGE_KEY)) as TimelineId | null;
++    if (saved && TIMELINES[saved]) setTimelineId(saved);
++  }, []);
++  const theme = useMemo(() => TIMELINES[timelineId], [timelineId]);
++  useEffect(() => {
++    if (typeof document !== "undefined") {
++      document.documentElement.setAttribute("data-theme", timelineId);
++      document.documentElement.style.setProperty("--bg", theme.colors.bg);
++      document.documentElement.style.setProperty("--accent", theme.colors.accent);
++      document.documentElement.style.setProperty("--text", theme.colors.text);
++      document.documentElement.style.setProperty("--pattern-opacity", String(theme.colors.patternOpacity ?? 0.06));
++      if (theme.assets.pattern) document.documentElement.style.setProperty("--pattern-url", `url(${theme.assets.pattern})`);
++      else document.documentElement.style.removeProperty("--pattern-url");
++    }
++    localStorage.setItem(STORAGE_KEY, timelineId);
++  }, [timelineId, theme]);
++  const setTimeline = (id: TimelineId) => setTimelineId(id);
++  const value = useMemo(() => ({ timelineId, theme, setTimeline }), [timelineId, theme]);
++  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
++}
++export function useTheme() {
++  const ctx = useContext(ThemeContext);
++  if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
++  return ctx;
++}
+diff --git a/src/components/TimelineSelector.tsx b/src/components/TimelineSelector.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/components/TimelineSelector.tsx
+@@
++"use client";
++import { useTheme } from "@/context/ThemeContext";
++import { TIMELINES } from "@/theme/timelines";
++export default function TimelineSelector() {
++  const { timelineId, setTimeline } = useTheme();
++  return (
++    <div className="flex items-center gap-2">
++      {Object.values(TIMELINES).map((t) => {
++        const active = t.id === timelineId;
++        return (
++          <button
++            key={t.id}
++            onClick={() => setTimeline(t.id)}
++            className={`px-2 py-1 rounded-md border text-sm flex items-center gap-1 transition ${active ? "border-black/40" : "border-black/10 hover:border-black/30"}`}
++            style={{ background: active ? t.colors.accent : "transparent", color: active ? "#000" : "inherit" }}
++            aria-pressed={active}
++            title={t.label}
++          >
++            <span aria-hidden>{t.icon}</span>
++            <span className="hidden sm:inline">{t.label}</span>
++          </button>
++        );
++      })}
++    </div>
++  );
++}
+diff --git a/src/components/SwipeDeck.tsx b/src/components/SwipeDeck.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/components/SwipeDeck.tsx
+@@
++"use client";
++import { useRef, useState } from "react";
++import { motion } from "framer-motion";
++import { useTheme } from "@/context/ThemeContext";
++import { postFeedback } from "@/lib/feedback";
++type Candidate = { candidate_id: string; text: string };
++type Flip = { flip_id: string; original: string; candidates: Candidate[] };
++export default function SwipeDeck({ initialFlips }: { initialFlips: Flip[] }) {
++  const { timelineId, theme } = useTheme();
++  const [flips, setFlips] = useState<Flip[]>(initialFlips);
++  const audioRef = useRef<HTMLAudioElement | null>(null);
++  const ensureSound = () => {
++    if (!theme.sound?.src) return null;
++    if (!audioRef.current) {
++      const a = new Audio(theme.sound.src);
++      a.volume = theme.sound.volume ?? 0.25;
++      audioRef.current = a;
++    }
++    return audioRef.current;
++  };
++  const handleVote = async (flip: Flip, chosen: Candidate, signal: 1 | -1) => {
++    if (typeof navigator !== "undefined" && "vibrate" in navigator && theme.haptics?.pattern) {
++      navigator.vibrate(theme.haptics.pattern);
++    }
++    const a = ensureSound(); a?.play().catch(() => {});
++    triggerSwipeEffect(theme.motion.swipeRightEffect);
++    void postFeedback({ flip_id: flip.flip_id, candidate_id: chosen.candidate_id, signal, timeline_id: timelineId, seen_ms: 1800, context: { device: "web" } });
++    setFlips((prev) => prev.filter((f) => f.flip_id !== flip.flip_id));
++  };
++  return (
++    <div className="relative min-h-[70vh] overflow-hidden theme-surface rounded-xl p-4">
++      {flips.map((flip, idx) => {
++        const top = idx === 0;
++        const candidate = flip.candidates[0];
++        return (
++          <motion.div
++            key={flip.flip_id}
++            className="absolute inset-0 m-4 rounded-xl shadow-lg"
++            style={{ background: "#fff", color: "#111", border: `2px solid ${theme.colors.accent}` }}
++            initial={theme.motion.enter}
++            animate={theme.motion.animate}
++            transition={theme.motion.transition}
++            drag={top ? "x" : false}
++            dragConstraints={{ left: 0, right: 0 }}
++            onDragEnd={(_, info) => {
++              const x = info.offset.x;
++              if (x > 120) handleVote(flip, candidate, +1);
++              else if (x < -120) handleVote(flip, candidate, -1);
++            }}
++          >
++            <div className="p-5 space-y-3">
++              <div className="text-xs opacity-70">{theme.icon} {theme.label} • {timelineId.toUpperCase()}</div>
++              <div className="text-sm opacity-70">Original</div>
++              <p className="text-base leading-6">{flip.original}</p>
++              <hr className="my-2" />
++              <div className="text-sm opacity-70">Through this lens</div>
++              <p className="text-lg leading-7">{candidate.text}</p>
++              <div className="flex gap-2 pt-4">
++                <button className="px-3 py-2 rounded-md border border-black/10" onClick={() => handleVote(flip, candidate, -1)}>👎</button>
++                <button className="px-3 py-2 rounded-md button-accent" onClick={() => handleVote(flip, candidate, +1)}>👍</button>
++              </div>
++            </div>
++          </motion.div>
++        );
++      })}
++      <div id="swipe-effect-layer" className="pointer-events-none absolute inset-0"></div>
++    </div>
++  );
++}
++function triggerSwipeEffect(effect?: string) {
++  const layer = document.getElementById("swipe-effect-layer");
++  if (!layer) return;
++  const el = document.createElement("div");
++  el.className = "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2";
++  el.style.width = "220px"; el.style.height = "220px";
++  el.style.background = "var(--accent)";
++  el.style.opacity = "0.25";
++  el.style.borderRadius = effect === "burst" ? "2px" : "50%";
++  el.style.transition = "transform 500ms cubic-bezier(.2,.8,.2,1), opacity 500ms";
++  if (effect === "burst") el.style.clipPath = "polygon(0 0, 100% 0, 80% 100%, 20% 100%)";
++  if (effect === "flip") el.style.clipPath = "inset(0 round 12px)";
++  layer.appendChild(el);
++  requestAnimationFrame(() => {
++    if (effect === "flip") {
++      el.animate([{ transform: "rotateY(0deg)" }, { transform: "rotateY(180deg)" }], { duration: 500, easing: "ease-in-out" });
++    } else if (effect === "confetti") {
++      for (let i = 0; i < 14; i++) {
++        const c = document.createElement("div");
++        c.className = "absolute"; c.style.width = "6px"; c.style.height = "10px";
++        c.style.background = "var(--accent)"; c.style.left = Math.random() * 100 + "%"; c.style.top = "50%";
++        c.style.transform = "translateY(-50%)"; c.style.opacity = "0.8";
++        layer.appendChild(c);
++        c.animate(
++          [{ transform: `translateY(-50%) translate(${rand(-40,40)}px, ${rand(-10,10)}px)` },
++           { transform: `translateY(120%) translate(${rand(-80,80)}px, ${rand(40,140)}px)`, opacity: 0 }],
++          { duration: 700 + Math.random() * 300, easing: "ease-out" }
++        ).onfinish = () => c.remove();
++      }
++    }
++    el.style.transform = effect === "merge" ? "scale(1.4)" : "scale(1.15)";
++    el.style.opacity = "0";
++  });
++  setTimeout(() => el.remove(), 520);
++}
++function rand(min: number, max: number) { return Math.random() * (max - min) + min; }
+diff --git a/src/lib/feedback.ts b/src/lib/feedback.ts
+new file mode 100644
+--- /dev/null
++++ b/src/lib/feedback.ts
+@@
++type FeedbackPayload = {
++  flip_id: string;
++  candidate_id: string;
++  signal: 1 | -1;
++  timeline_id: string;
++  seen_ms?: number;
++  context?: Record<string, any>;
++};
++export async function postFeedback(payload: FeedbackPayload) {
++  try {
++    await fetch("/api/feedback", {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify(payload),
++      keepalive: true,
++    });
++  } catch (e) {
++    console.warn("feedback failed", e);
++  }
++}
+diff --git a/src/app/timelines-demo/page.tsx b/src/app/timelines-demo/page.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/app/timelines-demo/page.tsx
+@@
++"use client";
++import TimelineSelector from "@/components/TimelineSelector";
++import { ThemeProvider } from "@/context/ThemeContext";
++import SwipeDeck from "@/components/SwipeDeck";
++const demoFlips = [
++  {
++    flip_id: "demo1",
++    original: "I’m sick of hearing about this. Nothing ever changes.",
++    candidates: [{ candidate_id: "c1", text: "Demo rewrite will appear here for the active timeline." }],
++  },
++  {
++    flip_id: "demo2",
++    original: "This is the only right answer and everyone else is wrong.",
++    candidates: [{ candidate_id: "c2", text: "Another demo rewrite goes here." }],
++  },
++];
++export default function Page() {
++  return (
++    <ThemeProvider>
++      <main className="p-6 space-y-4">
++        <div className="flex items-center justify-between">
++          <h1 className="text-2xl font-semibold">FlipSide Timelines Demo</h1>
++          <TimelineSelector />
++        </div>
++        <p className="opacity-70">Select a timeline above. Swipe right/left on the card to simulate feedback and see theme effects.</p>
++        <SwipeDeck initialFlips={demoFlips as any} />
++      </main>
++    </ThemeProvider>
++  );
++}
+diff --git a/public/patterns/calm.svg b/public/patterns/calm.svg
+new file mode 100644
+--- /dev/null
++++ b/public/patterns/calm.svg
+@@
++<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" fill="none"><circle cx="160" cy="160" r="140" stroke="white" stroke-opacity="0.3" stroke-width="1" /></svg>
+diff --git a/public/patterns/bridge.svg b/public/patterns/bridge.svg
+new file mode 100644
+--- /dev/null
++++ b/public/patterns/bridge.svg
+@@
++<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" fill="none"><g opacity="0.25"><circle cx="100" cy="160" r="80" stroke="white" stroke-width="1"/><circle cx="220" cy="160" r="80" stroke="white" stroke-width="1"/></g></svg>
+diff --git a/public/patterns/cynical.svg b/public/patterns/cynical.svg
+new file mode 100644
+--- /dev/null
++++ b/public/patterns/cynical.svg
+@@
++<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" fill="none"><g opacity="0.25"><path d="M20 20 L300 80 L40 300 Z" stroke="white" stroke-width="1" fill="none"/></g></svg>
+diff --git a/public/patterns/opposite.svg b/public/patterns/opposite.svg
+new file mode 100644
+--- /dev/null
++++ b/public/patterns/opposite.svg
+@@
++<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" fill="none"><g opacity="0.25"><path d="M40 160 H280" stroke="white" stroke-width="1"/><path d="M160 40 V280" stroke="white" stroke-width="1"/></g></svg>
+diff --git a/public/patterns/playful.svg b/public/patterns/playful.svg
+new file mode 100644
+--- /dev/null
++++ b/public/patterns/playful.svg
+@@
++<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" fill="none"><g opacity="0.25"><path d="M10 60 Q 160 10 310 60" stroke="white" stroke-width="2"/><path d="M10 160 Q 160 110 310 160" stroke="white" stroke-width="2"/><path d="M10 260 Q 160 210 310 260" stroke="white" stroke-width="2"/></g></svg>
