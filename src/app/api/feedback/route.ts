@@ -1,22 +1,26 @@
+// src/app/api/feedback/route.ts
 import { NextResponse } from "next/server";
 
 /**
- * Minimal endpoint to receive swipe feedback.
- * This prevents 404s when SwipeDeck calls /api/feedback.
- * In the future you can extend this to log or train models.
+ * Simple POST endpoint that receives feedback from SwipeDeck.
+ * In production, replace the console.log() with a DB write or analytics call.
  */
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   try {
-    const data = await request.json().catch(() => null);
-    console.log("Feedback received:", data); // You can remove this later
-    return new NextResponse(null, { status: 204 });
-  } catch (err) {
-    console.error("Feedback route error:", err);
-    return new NextResponse("Bad Request", { status: 400 });
-  }
-}
+    const body = await req.json();
 
-// Optional: handle other methods gracefully
-export async function GET() {
-  return NextResponse.json({ ok: true, message: "Feedback endpoint ready." });
+    // Optionally validate the shape
+    if (!body.flip_id || !body.candidate_id || !body.signal) {
+      return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
+    }
+
+    // For now, just log it
+    console.log("📝 Feedback received:", body);
+
+    // TODO: persist to your DB or analytics service
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("❌ Feedback route error:", err);
+    return NextResponse.json({ ok: false, error: "bad_request" }, { status: 400 });
+  }
 }
