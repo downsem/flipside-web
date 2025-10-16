@@ -4,112 +4,110 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useTheme } from "@/context/ThemeContext";
-import { TIMELINES, TIMELINE_LIST } from "@/theme/timelines";
+import { TIMELINES } from "@/theme/timelines";
+import type { TimelineId, TimelineSpec } from "@/theme/timelines";
+import { postFeedback } from "@/lib/feedback";
 
-// ----- Types coming from PostCard -----
-import type { PromptKey } from "@/utils/prompts";
-
-type VoteHandlerArgs = {
-  index: number;
-  key: PromptKey | "original";
-  value: "up" | "down" | null;
-  text: string;
-};
-
-type ReplyHandlerArgs = {
-  index: number;
-  key: PromptKey | "original";
-  text: string;     // reply body
-  flipText: string; // the flip text you’re replying to
-};
+// ---------- Types ----------
+type Candidate = { candidate_id: string; text: string };
+type Flip = { flip_id: string; original: string; candidates: Candidate[] };
 
 type Props = {
-  originalText: string;
-  apiBase: string; // e.g. NEXT_PUBLIC_API_BASE
-  onVote?: (args: VoteHandlerArgs) => Promise<void> | void;
-  onReply?: (args: ReplyHandlerArgs) => Promise<void> | void;
+  /** Optional. If omitted, we’ll fetch flips using originalText. */
+  initialFlips?: Flip[];
+  /** Provide original text to fetch flips from the API when initialFlips is empty. */
+  originalText?: string;
+  /** Optional. Falls back to NEXT_PUBLIC_API_BASE if omitted. */
+  apiBase?: string;
 };
 
-// ----- API shape from /flips -----
-type ApiFlip = { promptKind: string; text: string };
+// ---------- Helpers ----------
+const LABEL_TO_ID: Record<string, TimelineId> = Object.values(TIMELINES).reduce(
+  (acc, t) => {
+    acc[t.label] = t.id;
+    return acc;
+  },
+  {} as Record<string, TimelineId>
+);
 
-export default function SwipeDeck({
-  originalText,
-  apiBase,
-  onVote,
-  onReply,
-}: Props) {
-  const { timelineId, theme, setTimeline } = useTheme();
+const API_BASE_FROM_ENV =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_BASE) || "";
 
-  // index 0 = Original, then the fetched flips
-  const [active, setActive] = useState(0);
-  const [flips, setFlips] = useState<ApiFlip[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+/** simple visual flourish on swipe */
+function triggerSwipeEffect(effect?: string) {
+  const layer = document.getElementById("swipe-effect-layer");
+  if (!layer) return;
 
-  // Build the list we ask the API to generate (send display labels;
-  // backend also accepts ids, but labels are explicit).
-  const requestedKinds = useMemo(
-    () => TIMELINE_LIST.map((t) => t.label),
-    []
-  );
+  const el = document.createElement("div");
+  el.className = "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2";
+  el.style.width = "220px";
+  el.style.height = "220px";
+  el.style.background = "var(--accent)";
+  el.style.opacity = "0.25";
+  el.style.borderRadius = effect === "burst" ? "2px" : "50%";
+  el.style.transition = "transform 500ms cubic-bezier(.2,.8,.2,1), opacity 500ms";
+  if (effect === "burst") el.style.clipPath = "polygon(0 0, 100% 0, 80% 100%, 20% 100%)";
+  if (effect === "flip") el.style.clipPath = "inset(0 round 12px)";
+  layer.appendChild(el);
 
-  // Fetch from API **/flips** (not /generate_flips)
-  useEffect(() => {
-    let cancelled = false;
-
-    async function run() {
-      setError(null);
-      setFlips(null);
-      setActive(0);
-
-      try {
-        const res = await fetch(`${apiBase}/flips`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            originalText,
-            promptKinds: requestedKinds, // tell the API exactly which we want
-          }),
-        });
-
-        if (!res.ok) {
-          const msg = await safeErr(res);
-          throw new Error(msg || `API returned ${res.status}`);
-        }
-
-        const data: { flips: ApiFlip[] } = await res.json();
-        if (!cancelled) setFlips(Array.isArray(data.flips) ? data.flips : []);
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || "Failed to fetch flips");
+  requestAnimationFrame(() => {
+    if (effect === "flip") {
+      el.animate([{ transform: "rotateY(0deg)" }, { transform: "rotateY(180deg)" }], {
+        duration: 500,
+        easing: "ease-in-out",
+      });
+    } else if (effect === "confetti") {
+      for (let i = 0; i < 14; i++) {
+        const c = document.createElement("div");
+        c.className = "absolute";
+        c.style.width = "6px";
+        c.style.height = "10px";
+        c.style.background = "var(--accent)";
+        c.style.left = Math.random() * 100 + "%";
+        c.style.top = "50%";
+        c.style.transform = "translateY(-50%)";
+        c.style.opacity = "0.8";
+        layer.appendChild(c);
+        c.animate(
+          [
+            { transform: `translateY(-50%) translate(${rand(-40, 40)}px, ${rand(-10, 10)}px)` },
+            {
+              transform: `translateY(120%) translate(${rand(-80, 80)}px, ${rand(40, 140)}px)`,
+              opacity: 0,
+            },
+          ],
+          { duration: 700 + Math.random() * 300, easing: "ease-out" }
+        ).onfinish = () => c.remove();
       }
     }
+    el.style.transform = effect === "merge" ? "scale(1.4)" : "scale(1.15)";
+    el.style.opacity = "0";
+  });
 
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [apiBase, originalText, requestedKinds]);
+  setTimeout(() => el.remove(), 520);
+}
+function rand(min: number, max: number) {
+  return Math.random() * (max - min) + min;
+}
 
-  // Keep theme in sync with the active card:
-  // 0 = neutral/original; >0 = map to a timeline
-  useEffect(() => {
-    if (active === 0) {
-      // return to current selected theme (or default) – do nothing special
-      return;
-    }
-    const flip = flips?.[active - 1]; // because original is index 0
-    if (!flip) return;
+// ---------- Component ----------
+export default function SwipeDeck({
+  initialFlips = [],
+  originalText,
+  apiBase,
+}: Props) {
+  const { theme, timelineId, setTimeline } = useTheme();
+  const API_BASE = apiBase ?? API_BASE_FROM_ENV;
 
-    // Find the timeline by either label (promptKind) or id
-    const match =
-      TIMELINE_LIST.find((t) => t.label === flip.promptKind) ||
-      TIMELINE_LIST.find((t) => t.id === toId(flip.promptKind));
+  // state
+  const [flips, setFlips] = useState<Flip[]>(Array.isArray(initialFlips) ? initialFlips : []);
+  const [activeIndex, setActiveIndex] = useState<number>(-1); // -1 means "original"
+  const [lastFlipIndex, setLastFlipIndex] = useState<number>(0); // to support "Return to flip"
+  const [loading, setLoading] = useState<boolean>(false);
+  const [err, setErr] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-    if (match) setTimeline(match.id);
-  }, [active, flips, setTimeline]);
-
-  // Play small sound if defined on theme
+  // build sound on demand
   const ensureSound = () => {
     if (!theme?.sound?.src) return null;
     if (!audioRef.current) {
@@ -120,164 +118,234 @@ export default function SwipeDeck({
     return audioRef.current;
   };
 
-  const handleVote = async (
-    dir: "up" | "down" | null,
-    index: number,
-    key: PromptKey | "original",
-    text: string
-  ) => {
-    try {
-      ensureSound()?.play().catch(() => {});
-      if (onVote) await onVote({ index, key, value: dir, text });
-    } catch {
-      /* non-blocking */
-    }
-  };
-
-  const handleReply = async (index: number, key: PromptKey | "original", text: string, flipText: string) => {
-    try {
-      if (onReply) await onReply({ index, key, text, flipText });
-    } catch {
-      /* non-blocking */
-    }
-  };
-
-  // ---- Render helpers ----
-  const total = 1 + (flips?.length ?? 0); // original + N flips
-  const canPrev = active > 0;
-  const canNext = active < total - 1;
-
-  const goPrev = () => setActive((i) => Math.max(0, i - 1));
-  const goNext = () => setActive((i) => Math.min(total - 1, i + 1));
-
-  // Active content
-  const card = useMemo(() => {
-    if (active === 0) {
-      return {
-        title: "ORIGINAL POST",
-        text: originalText,
-        key: "original" as const,
-        idx: -1,
-        accent: theme.colors.accent,
-      };
-    }
-    const flip = flips?.[active - 1];
-    return flip
-      ? {
-          title: flip.promptKind,
-          text: flip.text,
-          key: toPromptKey(flip.promptKind),
-          idx: active - 1,
-          accent: theme.colors.accent,
+  // fetch flips if needed
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (flips.length || !originalText || !API_BASE) return;
+      try {
+        setLoading(true);
+        setErr(null);
+        const kinds = Object.values(TIMELINES).map((t) => t.label); // API accepts labels
+        const res = await fetch(`${API_BASE}/flips`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ originalText, promptKinds: kinds }),
+        });
+        if (!res.ok) {
+          const msg = await safeText(res);
+          throw new Error(`API ${res.status}: ${msg || res.statusText}`);
         }
-      : null;
-  }, [active, flips, originalText, theme.colors.accent]);
+        const data: { flips: { promptKind: string; text: string }[] } = await res.json();
+        const built: Flip[] = data.flips.map((f, i) => ({
+          flip_id: `f-${i}`,
+          original: originalText,
+          candidates: [{ candidate_id: `c-${i}`, text: f.text }],
+        }));
+        if (!cancelled) setFlips(built);
+      } catch (e: any) {
+        if (!cancelled) setErr(e?.message || "Failed to fetch");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originalText, API_BASE]); // don't include flips to avoid loops
 
+  // keep theme synced with active card
+  const activeTimelineId: TimelineId | null = useMemo(() => {
+    if (activeIndex < 0) return null; // original/neutral
+    const f = flips[activeIndex];
+    // We infer by label sent from API (promptKind)
+    // When we built from API we kept .original and .candidates[0].text only,
+    // but we still can map to the label order by index. To be safer, attach a label by index:
+    // Here we try to derive by index first; fallback to calm.
+    const idByIndex = (Object.values(TIMELINES)[activeIndex]?.id ??
+      "calm") as TimelineId;
+    return idByIndex;
+  }, [activeIndex, flips]);
+
+  useEffect(() => {
+    // go neutral on original card or when finished
+    if (activeIndex < 0 || activeIndex >= flips.length) {
+      setTimeline("calm" as TimelineId);
+    } else if (activeTimelineId) {
+      setTimeline(activeTimelineId);
+    }
+  }, [activeIndex, flips.length, activeTimelineId, setTimeline]);
+
+  // voting + swipe handling
+  async function handleVote(flip: Flip, chosen: Candidate, signal: 1 | -1) {
+    // haptics + sound
+    if (typeof navigator !== "undefined" && "vibrate" in navigator && theme?.haptics?.pattern) {
+      navigator.vibrate(theme.haptics.pattern);
+    }
+    const a = ensureSound();
+    a?.play().catch(() => {});
+    triggerSwipeEffect(theme?.motion?.swipeRightEffect);
+
+    // analytics/feedback sink (best effort)
+    void postFeedback({
+      flip_id: flip.flip_id,
+      candidate_id: chosen.candidate_id,
+      signal,
+      timeline_id: (timelineId as string) || "unknown",
+      seen_ms: 1800,
+      context: { device: "web" },
+    });
+
+    // advance to next flip
+    setActiveIndex((i) => Math.min(i + 1, flips.length)); // allow i === flips.length => "done"
+  }
+
+  function onTapCard() {
+    // clicking/tapping advances within stack (from original -> first, then forward)
+    if (activeIndex < 0) {
+      setActiveIndex(0);
+      setLastFlipIndex(0);
+    } else if (activeIndex < flips.length - 1) {
+      setLastFlipIndex(activeIndex + 1);
+      setActiveIndex((i) => i + 1);
+    } else {
+      // finished; show "done" state (neutral)
+      setActiveIndex(flips.length);
+    }
+  }
+
+  function goToOriginal() {
+    setLastFlipIndex(Math.max(activeIndex, 0));
+    setActiveIndex(-1);
+  }
+
+  function returnToFlip() {
+    setActiveIndex((prev) =>
+      prev < 0 ? Math.min(Math.max(lastFlipIndex, 0), flips.length - 1) : prev
+    );
+  }
+
+  // ---------- Render ----------
+  const showDone = activeIndex >= flips.length && flips.length > 0;
+  const showOriginal = activeIndex < 0;
+
+  // minimal guard UI always renders (avoids conditional-hooks errors)
   return (
-    <div className="relative theme-surface rounded-xl p-4 overflow-hidden">
-      {/* Status bar / errors */}
-      {error && (
-        <div className="mb-3 text-sm text-red-600">
-          Error: {error}
-        </div>
-      )}
-
-      {/* Card */}
-      {card && (
-        <motion.div
-          key={`${active}-${card.key}`}
-          className="rounded-xl bg-white text-neutral-900 shadow-lg p-5"
-          initial={theme.motion.enter}
-          animate={theme.motion.animate}
-          transition={toFramerTransition(theme.motion.transition)}
-          style={{ border: `2px solid ${card.accent}` }}
-        >
-          <div className="text-xs opacity-70 mb-2">{card.title}</div>
-          <div className="whitespace-pre-wrap leading-6">{card.text}</div>
-
-          <div className="mt-4 flex items-center gap-2">
-            {/* Vote buttons */}
+    <div className="relative min-h-[70vh] overflow-hidden theme-surface rounded-xl p-4">
+      {/* controls row */}
+      <div className="flex gap-2 mb-3">
+        {showOriginal ? (
+          flips.length > 0 && (
             <button
               className="px-3 py-2 rounded-md border border-black/10"
-              onClick={() => handleVote("down", card.idx, card.key, card.text)}
-              title="Downvote"
+              onClick={returnToFlip}
             >
-              👎
+              Return to flip
             </button>
-            <button
-              className="px-3 py-2 rounded-md button-accent"
-              onClick={() => handleVote("up", card.idx, card.key, card.text)}
-              title="Upvote"
-            >
-              👍
-            </button>
+          )
+        ) : (
+          <button className="px-3 py-2 rounded-md border border-black/10" onClick={goToOriginal}>
+            Original
+          </button>
+        )}
+      </div>
 
-            {/* Reply (simple example) */}
-            <button
-              className="ml-auto px-3 py-2 rounded-md border border-black/10"
-              onClick={() =>
-                handleReply(
-                  card.idx,
-                  card.key,
-                  "Thanks for the perspective.",
-                  card.text
-                )
-              }
-            >
-              Reply
-            </button>
-          </div>
-
-          {/* Navigation + Original toggle */}
-          <div className="mt-3 flex items-center justify-between text-sm">
-            <button
-              className="px-2 py-1 rounded-md border border-black/10 disabled:opacity-40"
-              onClick={goPrev}
-              disabled={!canPrev}
-            >
-              ← Prev
-            </button>
-
-            <div className="opacity-70">
-              {active + 1} / {total}
+      {/* content area */}
+      <div
+        className="relative min-h-[56vh] rounded-xl theme-surface overflow-hidden"
+        onClick={onTapCard}
+        role="button"
+      >
+        {/* Original / Neutral */}
+        {showOriginal && (
+          <motion.div
+            key="original"
+            className="absolute inset-0 m-4 rounded-xl shadow-lg bg-white text-black"
+            initial={{ opacity: 0.9, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: "spring", stiffness: 70, damping: 16 } as any}
+          >
+            <div className="p-5 space-y-3">
+              <div className="text-xs opacity-70">ORIGINAL POST</div>
+              <p className="text-lg leading-7">
+                {originalText ?? flips[0]?.original ?? "—"}
+              </p>
+              <p className="text-xs opacity-60 pt-3">(tap to see flips)</p>
             </div>
+          </motion.div>
+        )}
 
-            <button
-              className="px-2 py-1 rounded-md border border-black/10 disabled:opacity-40"
-              onClick={goNext}
-              disabled={!canNext}
-            >
-              Next →
-            </button>
-          </div>
+        {/* Active flip card */}
+        {!showOriginal && !showDone && flips[activeIndex] && (
+          <motion.div
+            key={flips[activeIndex].flip_id}
+            className="absolute inset-0 m-4 rounded-xl shadow-lg"
+            style={{
+              background: "#fff",
+              color: "#111",
+              border: `2px solid ${theme.colors.accent}`,
+            }}
+            initial={(theme.motion.enter as any) ?? { opacity: 0.95, scale: 0.985 }}
+            animate={(theme.motion.animate as any) ?? { opacity: 1, scale: 1 }}
+            transition={(theme.motion.transition as any) ?? { type: "spring", stiffness: 60, damping: 14 }}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            onDragEnd={(_, info) => {
+              const x = info.offset.x;
+              const candidate = flips[activeIndex].candidates?.[0];
+              if (!candidate) return;
+              if (x > 120) handleVote(flips[activeIndex], candidate, +1);
+              else if (x < -120) handleVote(flips[activeIndex], candidate, -1);
+            }}
+          >
+            <div className="p-5 space-y-3">
+              <div className="text-xs opacity-70">
+                {theme.icon} {theme.label}
+              </div>
+              <div className="text-sm opacity-70">Through this lens</div>
+              <p className="text-lg leading-7">{flips[activeIndex].candidates[0].text}</p>
+              <div className="flex gap-2 pt-4">
+                <button
+                  className="px-3 py-2 rounded-md border border-black/10"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleVote(flips[activeIndex], flips[activeIndex].candidates[0], -1);
+                  }}
+                >
+                  👎
+                </button>
+                <button
+                  className="px-3 py-2 rounded-md button-accent"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleVote(flips[activeIndex], flips[activeIndex].candidates[0], +1);
+                  }}
+                >
+                  👍
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
-          {/* “Original / Return to flip” toggle */}
-          <div className="mt-2">
-            {active === 0 ? (
-              <button
-                className="text-xs underline opacity-80"
-                onClick={() => setActive(1)}
-                disabled={total <= 1}
-              >
-                View flips
-              </button>
-            ) : (
-              <button
-                className="text-xs underline opacity-80"
-                onClick={() => setActive(0)}
-              >
-                View original (return to flip)
-              </button>
-            )}
+        {/* Finished state */}
+        {showDone && (
+          <div className="absolute inset-0 m-4 rounded-xl grid place-items-center border border-black/10 bg-white/70 text-black">
+            <div className="text-center space-y-2">
+              <div className="text-base font-medium">That’s everything for now</div>
+              <div className="text-xs opacity-70">tap Original to reread or scroll for the next post</div>
+            </div>
           </div>
-        </motion.div>
+        )}
+      </div>
+
+      {/* status/errors */}
+      {loading && (
+        <div className="mt-3 text-xs opacity-60">Generating flips…</div>
       )}
-
-      {/* Nothing returned from API */}
-      {!error && flips && flips.length === 0 && (
-        <div className="text-sm opacity-70 p-6 text-center">
-          Nothing to show yet.
-        </div>
+      {err && (
+        <div className="mt-3 text-xs text-red-600">Error: {err}</div>
       )}
 
       <div id="swipe-effect-layer" className="pointer-events-none absolute inset-0" />
@@ -285,46 +353,12 @@ export default function SwipeDeck({
   );
 }
 
-/* ---------------- helpers ---------------- */
-
-function toId(labelOrId: string) {
-  // normalize label → our timeline id (rough guess)
-  const lower = labelOrId.toLowerCase();
-  if (lower.includes("calm")) return "calm";
-  if (lower.includes("bridge")) return "bridge";
-  if (lower.includes("cynic")) return "cynical";
-  if (lower.includes("opposite")) return "opposite";
-  if (lower.includes("playful")) return "playful";
-  return labelOrId as keyof typeof TIMELINES;
-}
-
-function toPromptKey(label: string): PromptKey | "original" {
-  // If your PromptKey type expects specific keys, map here.
-  // For now we just return the label as-is (caller stores it).
-  return label as PromptKey;
-}
-
-async function safeErr(res: Response) {
+// small helper to avoid throwing when body isn’t JSON
+async function safeText(res: Response) {
   try {
-    const j = await res.json();
-    return j?.detail || j?.error || "";
+    const t = await res.text();
+    return t;
   } catch {
     return "";
   }
-}
-
-function toFramerTransition(input?: {
-  type?: string;
-  stiffness?: number;
-  damping?: number;
-  duration?: number;
-}) {
-  // Framer’s TS types want `type` to be a known literal; fall back safely.
-  if (!input) return undefined;
-  const { type, stiffness, damping, duration } = input;
-  const t =
-    type === "spring" || type === "tween" || type === "inertia"
-      ? type
-      : undefined;
-  return { type: t, stiffness, damping, duration };
 }
