@@ -1,273 +1,292 @@
 // src/components/SwipeDeck.tsx
 "use client";
 
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { TIMELINE_LIST, getTimeline, type TimelineId } from "@/theme/timelines";
-import { useFeedFilter } from "./FeedFilterContext";
+import { useTheme } from "@/context/ThemeContext";
 import { postFeedback } from "@/lib/feedback";
-import type { PromptKey } from "@/utils/prompts";
+import type { TimelineId } from "@/theme/timelines";
 
-// ---- Types (unchanged) ----
 type Candidate = { candidate_id: string; text: string };
-type OneFlip = { flip_id: string; original: string; candidates: Candidate[] };
+type Flip = { flip_id: string; original: string; candidates: Candidate[] };
+type FilterKind = "all" | TimelineId;
 
 type Props = {
-  // If no API fetching, parent can still pass seeded flips
-  initialFlips?: OneFlip[];
-  // Or pass the original text + we’ll call the API to get flips
-  originalText?: string;
-  apiBase?: string;
+  initialFlips?: Flip[];
+  apiBase: string;
+  filterPrompt: FilterKind; // <- NEW
   onVote?: (args: {
     index: number;
-    key: PromptKey | "original";
+    key: "original" | string;
     value: "up" | "down" | null;
     text: string;
   }) => Promise<void> | void;
   onReply?: (args: {
     index: number;
-    key: PromptKey | "original";
+    key: "original" | string;
     text: string;
     flipText: string;
   }) => Promise<void> | void;
 };
 
-const NEUTRAL_BG = "#E7F2F9";
+const ORDER: TimelineId[] = ["calm", "bridge", "cynical", "opposite", "playful"];
 
 export default function SwipeDeck({
-  initialFlips,
-  originalText,
+  initialFlips = [],
   apiBase,
+  filterPrompt,
   onVote,
   onReply,
 }: Props) {
-  const { filter } = useFeedFilter();
-
-  // ---- Demo / data glue (unchanged logic) ----
-  const [flips, setFlips] = useState<OneFlip[]>(
-    initialFlips ??
-      [
-        {
-          flip_id: "demo-1",
-          original:
-            "If Republicans want to blame their shutdown on me, they are more than welcome to come to my office and negotiate anytime.\n\nUnlike them, I won’t let kids and hard working people get cut off their insulin and chemo on my watch.\n\nThey know it, too. Door’s open fellas. Your call.",
-          candidates: [],
-        },
-      ]
+  const { timelineId, theme } = useTheme();
+  const [flips, setFlips] = useState<Flip[]>(
+    Array.isArray(initialFlips) ? initialFlips : []
   );
 
-  // If an API is provided and we have originalText, fetch flips (only on mount)
+  // we only render ONE card (the current) to avoid the stacked look
+  const [currentIdx, setCurrentIdx] = useState(0);
+
+  // Did we generate flips for this post yet?
+  const [generated, setGenerated] = useState(false);
+  const topFlip = flips[currentIdx];
+
+  // Generate on demand:
+  // - if filter = "all": generate all lenses (ORDER)
+  // - if filter = specific id: generate only that one lens
   useEffect(() => {
-    let ignore = false;
-    async function go() {
-      if (!apiBase || !originalText) return;
+    // nothing to generate without an original
+    const base = flips[0];
+    if (!base?.original) return;
+
+    // already generated?
+    if (generated) return;
+
+    const go = async () => {
       try {
-        const res = await fetch(`${apiBase.replace(/\/$/, "")}/flips`, {
+        const kinds =
+          filterPrompt === "all" ? ORDER : [filterPrompt as TimelineId];
+
+        const resp = await fetch(`${apiBase}/flips`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            originalText,
-            promptKinds: ["calm", "bridge", "cynical", "opposite", "playful"], // backend maps ids
+            originalText: base.original,
+            promptKinds: kinds,
           }),
         });
-        if (!res.ok) throw new Error(`API ${res.status}`);
-        const data = await res.json();
-        if (ignore) return;
+        if (!resp.ok) throw new Error(`flips failed: ${resp.status}`);
+        const data = await resp.json();
 
-        const candidates: Candidate[] = (data.flips || []).map((f: any, i: number) => ({
-          candidate_id: `c${i + 1}`,
-          text: f.text,
-        }));
+        // shape into our local Flip structure (single post)
+        const created: Candidate[] = (data.flips || []).map(
+          (f: { promptKind: string; text: string }, i: number) => ({
+            candidate_id: `${i}`,
+            text: f.text || "",
+          })
+        );
+
         setFlips([
           {
-            flip_id: `api-${Date.now()}`,
-            original: originalText,
-            candidates,
+            flip_id: base.flip_id,
+            original: base.original,
+            candidates: created,
           },
         ]);
+        setGenerated(true);
+
+        // If filter = specific prompt → skip original and show the one generated candidate.
+        if (filterPrompt !== "all") {
+          setCurrentIdx(0); // we still have a single Flip object; the card shows candidate[0]
+        }
       } catch (e) {
-        console.warn("generate flips failed:", e);
+        console.error("generate error", e);
       }
-    }
-    go();
-    return () => {
-      ignore = true;
     };
-  }, [apiBase, originalText]);
 
-  // ---- Which “view” to show based on filter ----
-  // null => Default(All) => show Original + all lenses
-  // lens => only that lens (no Original, no swiping across others)
-  const [cursor, setCursor] = useState(0);
+    go();
+  }, [apiBase, flips, generated, filterPrompt]);
 
-  // flatten all candidates across flips (MVP feed shows one flip at a time anyway)
-  const active = flips[0];
+  // Card view model
+  const showingOriginal =
+    filterPrompt === "all" && currentIdx === 0 && (flips[0]?.candidates?.length ?? 0) >= 0;
 
-  // compute the list for the current mode
-  const displayItems = useMemo(() => {
-    if (!active) return [];
-
-    const all = [
-      { kind: "original" as const, text: active.original, timelineId: null as TimelineId | null },
-      ...TIMELINE_LIST.map((t, i) => ({
-        kind: t.id as TimelineId,
-        text: active.candidates[i]?.text ?? "",
-        timelineId: t.id,
-      })),
-    ];
-
-    if (filter === null) {
-      // Default: Original then every lens
-      return all;
-    } else {
-      // Specific lens only
-      const idx = TIMELINE_LIST.findIndex((t) => t.id === filter);
-      const text = active.candidates[idx]?.text ?? "";
-      return [{ kind: filter, text, timelineId: filter }];
+  // Readable text displayed on the card
+  const displayText = useMemo(() => {
+    const f = flips[0];
+    if (!f) return "";
+    if (filterPrompt === "all") {
+      // original first, then candidate N (we model it as still index 0 flip)
+      const step = currentIdx;
+      if (step === 0) return f.original;
+      return f.candidates[step - 1]?.text ?? "";
     }
-  }, [active, filter]);
+    // specific lens: just show candidate[0]
+    return f.candidates[0]?.text ?? "";
+  }, [flips, currentIdx, filterPrompt]);
 
-  // keep cursor in range if the list shape changes
-  useEffect(() => {
-    setCursor(0);
-  }, [filter, active?.flip_id]);
+  // How many steps are there?
+  const totalSteps =
+    filterPrompt === "all"
+      ? 1 + (flips[0]?.candidates?.length ?? 0) // original + N candidates
+      : Math.min(1, (flips[0]?.candidates?.length ?? 0)); // exactly 1
 
-  const current = displayItems[cursor];
+  const canPrev = filterPrompt === "all" ? currentIdx > 0 : false;
+  const canNext = currentIdx < totalSteps - 1;
 
-  // ---- Voting / feedback ----
-  const sendVote = useCallback(
-    async (dir: "up" | "down") => {
-      if (!active || !current) return;
-      const isOriginal = current.kind === "original";
-      try {
-        await onVote?.({
-          index: isOriginal ? -1 : cursor - 1,
-          key: isOriginal ? "original" : (current.kind as PromptKey),
-          value: dir,
-          text: current.text,
-        });
-        // lightweight sink (non-blocking)
-        postFeedback({
-          flip_id: active.flip_id,
-          candidate_id: isOriginal ? "original" : `c${cursor}`,
-          signal: dir === "up" ? 1 : -1,
-          timeline_id: isOriginal ? "original" : (current.kind as TimelineId),
-        }).catch(() => {});
-      } catch {
-        /* noop */
-      }
-    },
-    [active, current, cursor, onVote]
-  );
+  // vote handler (kept simple)
+  const emitVote = async (dir: 1 | -1) => {
+    const key =
+      filterPrompt === "all"
+        ? currentIdx === 0
+          ? "original"
+          : ORDER[currentIdx - 1]
+        : (filterPrompt as TimelineId);
 
-  const sendReply = useCallback(
-    async (reply: string) => {
-      if (!active || !current) return;
-      const isOriginal = current.kind === "original";
-      await onReply?.({
-        index: isOriginal ? -1 : cursor - 1,
-        key: isOriginal ? "original" : (current.kind as PromptKey),
-        text: reply,
-        flipText: current.text,
+    const text = displayText;
+    try {
+      await onVote?.({
+        index: currentIdx,
+        key,
+        value: dir === 1 ? "up" : "down",
+        text,
       });
-    },
-    [active, current, cursor, onReply]
-  );
+      // send feedback ping to your web API if you want
+      void postFeedback({
+        flip_id: flips[0]?.flip_id ?? "unknown",
+        candidate_id: `${currentIdx}`,
+        signal: dir,
+        timeline_id: key === "original" ? "original" : String(key),
+        seen_ms: 1500,
+        context: { device: "web" },
+      });
+    } catch (e) {
+      console.warn("vote error", e);
+    }
+  };
 
-  // ---- UI theme per lens (or neutral for Original / default bg) ----
-  const bg = current?.timelineId ? getTimeline(current.timelineId).colors.bg : NEUTRAL_BG;
+  // Reply handler (MVP demo)
+  const [replyText, setReplyText] = useState("");
+  const submitReply = async () => {
+    const key =
+      filterPrompt === "all"
+        ? currentIdx === 0
+          ? "original"
+          : ORDER[currentIdx - 1]
+        : (filterPrompt as TimelineId);
 
-  // ---- Render ----
+    const flipText = displayText;
+    try {
+      await onReply?.({
+        index: currentIdx,
+        key,
+        text: replyText,
+        flipText,
+      });
+      setReplyText("");
+      alert("Thanks for the comment!");
+    } catch (e) {
+      console.warn("reply error", e);
+    }
+  };
+
+  // Empty state
+  if (!flips[0]) {
+    return (
+      <div className="rounded-xl p-6 text-sm opacity-70 border">
+        No content.
+      </div>
+    );
+  }
+
   return (
-    <div className="tap-transparent" style={{ background: bg }}>
-      {/* Single clean card — no stacked shadows */}
-      <div className="rounded-3xl bg-white shadow-lg ring-1 ring-black/5 p-4 sm:p-6">
-        {/* Top nav for prev/next only when unfiltered */}
-        {filter === null && (
-          <div className="flex items-center justify-between mb-3">
+    <div className="relative">
+      {/* Single card */}
+      <motion.div
+        className="rounded-xl border shadow-sm bg-white"
+        initial={theme.motion.enter}
+        animate={theme.motion.animate}
+        transition={theme.motion.transition as any}
+        drag="x"
+        dragConstraints={{ left: 0, right: 0 }}
+        onDragEnd={(_, info) => {
+          const x = info.offset.x;
+          if (x > 120 && canNext) setCurrentIdx((i) => i + 1);
+          else if (x < -120 && canPrev) setCurrentIdx((i) => i - 1);
+        }}
+      >
+        <div className="p-5 space-y-4">
+          {/* (No icon/category per your request) */}
+
+          {/* Body text */}
+          <p className="text-base leading-6 whitespace-pre-wrap">{displayText}</p>
+
+          {/* Vote + Nav */}
+          <div className="flex items-center justify-between pt-2">
+            <div className="flex gap-2">
+              <button
+                className="px-3 py-2 rounded-md border"
+                onClick={() => emitVote(-1)}
+                aria-label="Downvote"
+              >
+                👎
+              </button>
+              <button
+                className="px-3 py-2 rounded-md border"
+                onClick={() => emitVote(1)}
+                aria-label="Upvote"
+              >
+                👍
+              </button>
+            </div>
+
+            {/* Prev/Next (auto-hidden on small screens via CSS) */}
+            <div className="hidden sm:flex items-center gap-2">
+              <button
+                className="px-3 py-2 rounded-md border disabled:opacity-40"
+                onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
+                disabled={!canPrev}
+                aria-label="Previous"
+              >
+                Prev
+              </button>
+              <button
+                className="px-3 py-2 rounded-md border disabled:opacity-40"
+                onClick={() =>
+                  setCurrentIdx((i) => Math.min(totalSteps - 1, i + 1))
+                }
+                disabled={!canNext}
+                aria-label="Next"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+
+          {/* Reply box (MVP) */}
+          <div className="pt-2 space-y-2">
+            <textarea
+              className="w-full rounded-lg border p-2 text-sm"
+              placeholder="Write a quick comment…"
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+            />
             <button
-              className="rounded-xl border px-3 py-1 text-sm disabled:opacity-40"
-              onClick={() => setCursor((c) => Math.max(0, c - 1))}
-              disabled={cursor === 0}
+              className="px-3 py-2 rounded-md border"
+              onClick={submitReply}
+              disabled={replyText.trim().length === 0}
             >
-              ← Prev
-            </button>
-            <button
-              className="rounded-xl border px-3 py-1 text-sm disabled:opacity-40"
-              onClick={() => setCursor((c) => Math.min(displayItems.length - 1, c + 1))}
-              disabled={cursor >= displayItems.length - 1}
-            >
-              Next →
+              Reply
             </button>
           </div>
-        )}
-
-        {/* Text */}
-        <div className="whitespace-pre-wrap leading-relaxed text-[17px] sm:text-[18px]">
-          {current?.text || ""}
         </div>
+      </motion.div>
 
-        {/* Vote row */}
-        <div className="mt-4 flex gap-2">
-          <button
-            className="rounded-xl border px-3 py-2 text-lg hover:bg-gray-50"
-            onClick={() => sendVote("down")}
-            aria-label="Downvote"
-          >
-            👎
-          </button>
-          <button
-            className="rounded-xl border px-3 py-2 text-lg hover:bg-gray-50"
-            onClick={() => sendVote("up")}
-            aria-label="Upvote"
-          >
-            👍
-          </button>
+      {/* When at the end and a specific filter is on, show “Nothing else to see” */}
+      {filterPrompt !== "all" && !canNext && (
+        <div className="text-center text-sm opacity-70 mt-3">
+          Nothing else to see in this lens.
         </div>
-
-        {/* Reply box (single comment input for MVP) */}
-        <ReplyBox
-          disabled={!current}
-          onSubmit={async (val) => {
-            await sendReply(val);
-          }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ReplyBox({
-  disabled,
-  onSubmit,
-}: {
-  disabled?: boolean;
-  onSubmit: (text: string) => void | Promise<void>;
-}) {
-  const [val, setVal] = useState("");
-
-  return (
-    <div className="mt-4">
-      <textarea
-        className="w-full rounded-2xl border px-3 py-2 min-h-[96px]"
-        placeholder="Write a reply..."
-        value={val}
-        onChange={(e) => setVal(e.target.value)}
-        disabled={disabled}
-      />
-      <div className="mt-2 flex justify-end">
-        <button
-          className="rounded-2xl bg-black text-white px-4 py-2 text-sm disabled:opacity-40"
-          onClick={async () => {
-            if (!val.trim()) return;
-            await onSubmit(val.trim());
-            setVal("");
-          }}
-          disabled={disabled}
-        >
-          Reply
-        </button>
-      </div>
+      )}
     </div>
   );
 }

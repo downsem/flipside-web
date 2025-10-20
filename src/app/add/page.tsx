@@ -2,62 +2,61 @@
 "use client";
 
 import React, { useState } from "react";
-import { db } from "../firebase";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import Link from "next/link";
+import { db } from "../firebase";
+import { auth } from "../firebase";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
-export default function AddFlipPage() {
+export default function AddPage() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [ok, setOk] = useState<string | null>(null);
+  const canSubmit = text.trim().length > 0 && !busy;
 
-  async function submit() {
-    if (!text.trim()) return;
-    setBusy(true);
-    setOk(null);
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
     try {
+      setBusy(true);
+      const user = auth.currentUser;
+      const authorId = user?.uid || "anon";
       await addDoc(collection(db, "posts"), {
         originalText: text.trim(),
-        authorId: "anon",
+        filteredText: "",         // optional legacy field
+        authorId,
         createdAt: serverTimestamp(),
       });
       setText("");
-      setOk("Saved! It will appear in the feed shortly.");
-    } catch (e) {
-      setOk("Failed to save. Try again.");
-      console.error(e);
+      alert("Added!");
+    } catch (err) {
+      console.error("add failed", err);
+      alert("Failed to add. Check console.");
     } finally {
       setBusy(false);
     }
-  }
+  };
 
   return (
-    <main className="max-w-2xl mx-auto p-4">
-      <header className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-semibold">Add Flip</h1>
-        <Link href="/" className="underline text-sm">
-          Back to feed
-        </Link>
+    <main className="max-w-3xl mx-auto p-4 md:p-6">
+      <header className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Add Flip</h1>
+        <Link href="/" className="underline text-sm">Back to feed</Link>
       </header>
 
-      <textarea
-        className="w-full min-h-[180px] rounded-2xl border px-3 py-2"
-        placeholder="Paste or type the original post…"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
-
-      <div className="mt-3 flex justify-end">
+      <form onSubmit={onSubmit} className="space-y-3">
+        <textarea
+          className="w-full min-h-[140px] rounded-xl border p-3"
+          placeholder="Paste the original post text…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
         <button
-          className="rounded-2xl bg-black text-white px-4 py-2 text-sm disabled:opacity-40"
-          onClick={submit}
-          disabled={busy || !text.trim()}
+          type="submit"
+          disabled={!canSubmit}
+          className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50"
         >
           {busy ? "Saving…" : "Save"}
         </button>
-      </div>
-
-      {ok && <p className="mt-3 text-sm text-gray-600">{ok}</p>}
+      </form>
     </main>
   );
 }

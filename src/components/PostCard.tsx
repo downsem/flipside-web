@@ -4,6 +4,9 @@
 import React, { useState } from "react";
 import SwipeDeck from "./SwipeDeck";
 import type { PromptKey } from "@/utils/prompts";
+import type { TimelineId } from "@/theme/timelines";
+
+type FilterKind = "all" | TimelineId;
 
 type Post = {
   id: string;
@@ -17,11 +20,12 @@ type Flip = { flip_id: string; original: string; candidates: Candidate[] };
 export default function PostCard({
   post,
   apiBase,
+  filter,
 }: {
   post: Post;
   apiBase: string;
+  filter: FilterKind;
 }) {
-  // (MVP) local draft just to keep text while user types
   const [replyDraft, setReplyDraft] = useState("");
 
   const initialFlips: Flip[] = [
@@ -37,6 +41,7 @@ export default function PostCard({
       <SwipeDeck
         initialFlips={initialFlips}
         apiBase={apiBase}
+        filterPrompt={filter}   // <— NEW
         onVote={async ({
           key,
           value,
@@ -49,8 +54,7 @@ export default function PostCard({
           text: string;
         }) => {
           if (!value) return;
-          // place to persist vote if you want
-          // await saveFlipVote({ postId: post.id, key, value, text, index })
+          // persist if desired
         }}
         onReply={async ({
           key,
@@ -63,8 +67,7 @@ export default function PostCard({
           text: string;
           flipText: string;
         }) => {
-          // place to persist reply if you want
-          // await saveFlipReply({ postId: post.id, key, text, flipText, index })
+          // persist if desired
           setReplyDraft("");
         }}
       />

@@ -13,11 +13,9 @@ import {
   Timestamp,
 } from "firebase/firestore";
 
-// UI + theme
+import PostCard from "@/components/PostCard";
 import { useTheme } from "@/context/ThemeContext";
 import { TIMELINES, type TimelineId } from "@/theme/timelines";
-
-import PostCard from "@/components/PostCard";
 
 type Post = {
   id: string;
@@ -30,14 +28,18 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ||
   "https://flipside.fly.dev";
 
+type FilterKind = "all" | TimelineId;
+
 export default function HomePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // global theme & (lightweight) filter selection
-  const { timelineId, setTimeline } = useTheme();
+  // Global theme still lives in ThemeContext
+  const { timelineId, setTimeline, theme } = useTheme();
 
-  // Feed subscription
+  // NEW: local feed filter (independent from theme). Defaults to "all".
+  const [filter, setFilter] = useState<FilterKind>("all");
+
   useEffect(() => {
     const q = query(
       collection(db, "posts"),
@@ -69,59 +71,77 @@ export default function HomePage() {
 
   const hasPosts = posts.length > 0;
 
+  // Apply page-level themed background (keeps card white/legible)
+  const pageBg = theme?.colors?.bg ?? "#f8fafc";
+  const pageText = theme?.colors?.text ?? "#111";
+
   return (
-    <main className="max-w-3xl mx-auto p-4 md:p-6">
-      {/* Top bar */}
-      <header className="mb-6 flex items-center justify-between gap-3">
-        <h1 className="text-3xl font-bold">FlipSide</h1>
+    <main
+      className="min-h-screen"
+      style={{ background: pageBg, color: pageText }}
+    >
+      <div className="max-w-3xl mx-auto p-4 md:p-6">
+        {/* Header */}
+        <header className="mb-6 flex items-center justify-between gap-3">
+          <h1 className="text-3xl font-bold">FlipSide</h1>
+          <div className="flex items-center gap-2">
+            {/* Add Flip (left of filter) */}
+            <Link
+              href="/add"
+              className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800"
+            >
+              Add Flip
+            </Link>
 
-        <div className="flex items-center gap-2">
-          {/* Add Flip — sits to the LEFT of the filter */}
-          <Link
-            href="/add"
-            className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800"
-          >
-            Add Flip
-          </Link>
+            {/* Filter */}
+            <label htmlFor="feed-filter" className="sr-only">
+              Filter flips
+            </label>
+            <select
+              id="feed-filter"
+              className="rounded-xl border px-3 py-2 text-sm bg-white"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as FilterKind)}
+            >
+              <option value="all">Default (All)</option>
+              {Object.values(TIMELINES).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
 
-          {/* Prompt filter (global) */}
-          <label className="sr-only" htmlFor="prompt-filter">
-            Filter by lens
-          </label>
-          <select
-            id="prompt-filter"
-            className="rounded-xl border px-3 py-2 text-sm bg-white"
-            value={timelineId}
-            onChange={(e) => setTimeline(e.target.value as TimelineId)}
-          >
-            {/* We’re intentionally NOT showing an “All” here to keep theme+filter aligned.
-                If you later want an “All”, we can add local state for it and keep theme neutral. */}
-            {Object.values(TIMELINES).map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+            {/* Optional: keep theme in sync when user picks a specific lens */}
+            {filter !== "all" && filter !== timelineId ? (
+              <button
+                className="text-xs underline"
+                onClick={() => setTimeline(filter as TimelineId)}
+                title="Match page theme to this lens"
+              >
+                Match theme
+              </button>
+            ) : null}
+          </div>
+        </header>
+
+        {/* Feed */}
+        {loading && <div className="text-gray-600 text-sm">Loading feed…</div>}
+
+        {!loading && !hasPosts && (
+          <div className="text-gray-600 text-sm">
+            No posts yet. Be the first to{" "}
+            <Link href="/add" className="underline">
+              add one
+            </Link>
+            !
+          </div>
+        )}
+
+        <div className="space-y-6">
+          {posts.map((post) => (
+            <PostCard key={post.id} post={post} apiBase={API_BASE} filter={filter} />
+          ))}
         </div>
-      </header>
-
-      {/* Feed */}
-      {loading && <div className="text-gray-500 text-sm">Loading feed…</div>}
-
-      {!loading && !hasPosts && (
-        <div className="text-gray-500 text-sm">
-          No posts yet. Be the first to{" "}
-          <Link href="/add" className="underline">
-            add one
-          </Link>
-          !
-        </div>
-      )}
-
-      <div className="space-y-6">
-        {posts.map((post) => (
-          <PostCard key={post.id} post={post} apiBase={API_BASE} />
-        ))}
       </div>
     </main>
   );
