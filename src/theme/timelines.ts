@@ -1,3 +1,4 @@
+// src/theme/timelines.ts
 // Central timeline definitions (types + presets)
 
 export type TimelineId = "calm" | "bridge" | "cynical" | "opposite" | "playful";
@@ -22,7 +23,7 @@ export type TimelineSpec = {
     enter?: { opacity?: number; scale?: number };
     animate?: { opacity?: number; scale?: number };
     transition?: {
-      type?: string;
+      type?: "spring" | "tween" | "keyframes";
       stiffness?: number;
       damping?: number;
       duration?: number;
@@ -53,6 +54,7 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
     haptics: { pattern: [10] },
     sound: { src: "/sounds/chime.mp3", volume: 0.25 },
   },
+
   bridge: {
     id: "bridge",
     label: "Balanced-Bridge",
@@ -70,13 +72,15 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
     haptics: { pattern: [8, 30, 8] },
     sound: { src: "/sounds/wood-click.mp3", volume: 0.25 },
   },
+
   cynical: {
     id: "cynical",
     label: "Cynical-Wit",
     icon: "😏",
     prompt:
       "Rewrite the user’s text with dry humor and sharp skepticism. Keep it concise, clever, and grounded in truth—never cruel, but knowingly ironic.",
-    colors: { bg: "#121212", accent: "#A5FF00", text: "#F5F5F5", patternOpacity: 0.06 },
+    // Accessibility tuned: darker bg, softened neon accent, high-contrast text
+    colors: { bg: "#16181A", accent: "#B6FF66", text: "#F8FAFC", patternOpacity: 0.05 },
     assets: { shapeSvg: "/shapes/cynical.svg", pattern: "/patterns/cynical.svg" },
     motion: {
       enter: { opacity: 0, scale: 0.98 },
@@ -87,6 +91,7 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
     haptics: { pattern: [12] },
     sound: { src: "/sounds/metal-click.mp3", volume: 0.28 },
   },
+
   opposite: {
     id: "opposite",
     label: "Opposite-Perspective",
@@ -104,6 +109,7 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
     haptics: { pattern: [18] },
     sound: { src: "/sounds/whoosh.mp3", volume: 0.25 },
   },
+
   playful: {
     id: "playful",
     label: "Playful-Satirical",
@@ -123,7 +129,7 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
   },
 } as const;
 
-// Convenience helpers (optional to use elsewhere)
+// Convenience helpers
 export const TIMELINE_LIST: ReadonlyArray<TimelineSpec> = Object.values(
   TIMELINES
 ) as unknown as TimelineSpec[];

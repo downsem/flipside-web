@@ -1,3 +1,4 @@
+// src/app/layout.tsx
 "use client";
 
 import "./globals.css";
@@ -7,17 +8,11 @@ import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import { auth } from "./firebase";
 import { ThemeProvider } from "@/context/ThemeContext";
 
-/**
- * RootLayout:
- * - Initializes Firebase anonymous auth on first load.
- * - Wraps the app in ThemeProvider so timeline colors/patterns are reactive.
- * - Applies CSS variables for background/text from ThemeContext.
- */
 export default function RootLayout({ children }: { children: ReactNode }) {
-  // Maintain anonymous auth session
+  // Ensure we always have a user (anonymous) for persistence/feedback
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      if (!user) {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (!u) {
         signInAnonymously(auth).catch((e) =>
           console.error("Anon sign-in failed:", e)
         );
@@ -27,21 +22,22 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className="
+          min-h-screen
           bg-[var(--bg)]
           text-[var(--text)]
-          transition-colors
-          duration-300
-          min-h-screen
-          font-sans
+          transition-colors duration-300
           antialiased
+          selection:bg-[var(--accent)]/50
         "
       >
         <ThemeProvider>
-          {/* Everything below can read theme colors via CSS vars or useTheme() */}
-          {children}
+          {/* Constrain feed width; adjust as your design evolves */}
+          <div id="app-root" className="mx-auto max-w-2xl p-4 sm:p-6">
+            {children}
+          </div>
         </ThemeProvider>
       </body>
     </html>

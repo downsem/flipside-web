@@ -1,9 +1,9 @@
 // src/app/page.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { db } from "./firebase"; // adjust the path if your firebase file lives elsewhere
+import { db } from "./firebase";
 import {
   collection,
   onSnapshot,
@@ -12,7 +12,12 @@ import {
   limit,
   Timestamp,
 } from "firebase/firestore";
-import PostCard from "../components/PostCard";
+
+// UI + theme
+import { useTheme } from "@/context/ThemeContext";
+import { TIMELINES, type TimelineId } from "@/theme/timelines";
+
+import PostCard from "@/components/PostCard";
 
 type Post = {
   id: string;
@@ -29,6 +34,10 @@ export default function HomePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // global theme & (lightweight) filter selection
+  const { timelineId, setTimeline } = useTheme();
+
+  // Feed subscription
   useEffect(() => {
     const q = query(
       collection(db, "posts"),
@@ -62,21 +71,42 @@ export default function HomePage() {
 
   return (
     <main className="max-w-3xl mx-auto p-4 md:p-6">
-      {/* Header */}
-      <header className="flex items-center justify-between mb-6">
+      {/* Top bar */}
+      <header className="mb-6 flex items-center justify-between gap-3">
         <h1 className="text-3xl font-bold">FlipSide</h1>
-        <Link
-          href="/add"
-          className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800"
-        >
-          Add Flip
-        </Link>
+
+        <div className="flex items-center gap-2">
+          {/* Add Flip — sits to the LEFT of the filter */}
+          <Link
+            href="/add"
+            className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800"
+          >
+            Add Flip
+          </Link>
+
+          {/* Prompt filter (global) */}
+          <label className="sr-only" htmlFor="prompt-filter">
+            Filter by lens
+          </label>
+          <select
+            id="prompt-filter"
+            className="rounded-xl border px-3 py-2 text-sm bg-white"
+            value={timelineId}
+            onChange={(e) => setTimeline(e.target.value as TimelineId)}
+          >
+            {/* We’re intentionally NOT showing an “All” here to keep theme+filter aligned.
+                If you later want an “All”, we can add local state for it and keep theme neutral. */}
+            {Object.values(TIMELINES).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </header>
 
       {/* Feed */}
-      {loading && (
-        <div className="text-gray-500 text-sm">Loading feed…</div>
-      )}
+      {loading && <div className="text-gray-500 text-sm">Loading feed…</div>}
 
       {!loading && !hasPosts && (
         <div className="text-gray-500 text-sm">
