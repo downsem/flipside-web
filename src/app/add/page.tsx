@@ -1,8 +1,9 @@
 // src/app/add/page.tsx
 "use client";
 
+// ✅ Correct dynamic export syntax
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 0; // Must be a number, not an object
 
 import React, { useState } from "react";
 import Link from "next/link";
@@ -17,6 +18,7 @@ export default function AddPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+
     try {
       setBusy(true);
       const user = auth.currentUser;

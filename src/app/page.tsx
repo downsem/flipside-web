@@ -1,6 +1,9 @@
 // src/app/page.tsx
 "use client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { db } from "./firebase";
@@ -10,8 +13,8 @@ import {
   orderBy,
   query,
   limit,
-  Timestamp,
 } from "firebase/firestore";
+import type { Timestamp } from "firebase/firestore";
 
 import PostCard from "@/components/PostCard";
 import { useTheme } from "@/context/ThemeContext";
@@ -34,10 +37,10 @@ export default function HomePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Global theme still lives in ThemeContext
+  // Theme (background only — cards stay white)
   const { timelineId, setTimeline, theme } = useTheme();
 
-  // NEW: local feed filter (independent from theme). Defaults to "all".
+  // Local feed filter (independent from theme)
   const [filter, setFilter] = useState<FilterKind>("all");
 
   useEffect(() => {
@@ -71,15 +74,12 @@ export default function HomePage() {
 
   const hasPosts = posts.length > 0;
 
-  // Apply page-level themed background (keeps card white/legible)
+  // Page background uses current theme; cards remain white/legible
   const pageBg = theme?.colors?.bg ?? "#f8fafc";
   const pageText = theme?.colors?.text ?? "#111";
 
   return (
-    <main
-      className="min-h-screen"
-      style={{ background: pageBg, color: pageText }}
-    >
+    <main className="min-h-screen" style={{ background: pageBg, color: pageText }}>
       <div className="max-w-3xl mx-auto p-4 md:p-6">
         {/* Header */}
         <header className="mb-6 flex items-center justify-between gap-3">
@@ -111,7 +111,7 @@ export default function HomePage() {
               ))}
             </select>
 
-            {/* Optional: keep theme in sync when user picks a specific lens */}
+            {/* Optional: match page theme to selected lens */}
             {filter !== "all" && filter !== timelineId ? (
               <button
                 className="text-xs underline"
