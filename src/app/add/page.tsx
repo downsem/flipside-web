@@ -1,14 +1,13 @@
 // src/app/add/page.tsx
 "use client";
 
-// ✅ Correct dynamic export syntax
 export const dynamic = "force-dynamic";
-export const revalidate = 0; // Must be a number, not an object
+export const revalidate = 0;
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { db, auth } from "../firebase";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db, auth, serverTimestamp } from "@/app/firebase";
+import { addDoc, collection } from "firebase/firestore";
 
 export default function AddPage() {
   const [text, setText] = useState("");
@@ -18,14 +17,13 @@ export default function AddPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
-
     try {
       setBusy(true);
       const user = auth.currentUser;
       const authorId = user?.uid || "anon";
       await addDoc(collection(db, "posts"), {
         originalText: text.trim(),
-        filteredText: "", // optional legacy field
+        filteredText: "", // legacy/optional
         authorId,
         createdAt: serverTimestamp(),
       });

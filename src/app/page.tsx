@@ -37,10 +37,7 @@ export default function HomePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Theme (background only — cards stay white)
   const { timelineId, setTimeline, theme } = useTheme();
-
-  // Local feed filter (independent from theme)
   const [filter, setFilter] = useState<FilterKind>("all");
 
   useEffect(() => {
@@ -74,18 +71,15 @@ export default function HomePage() {
 
   const hasPosts = posts.length > 0;
 
-  // Page background uses current theme; cards remain white/legible
   const pageBg = theme?.colors?.bg ?? "#f8fafc";
   const pageText = theme?.colors?.text ?? "#111";
 
   return (
     <main className="min-h-screen" style={{ background: pageBg, color: pageText }}>
       <div className="max-w-3xl mx-auto p-4 md:p-6">
-        {/* Header */}
         <header className="mb-6 flex items-center justify-between gap-3">
           <h1 className="text-3xl font-bold">FlipSide</h1>
           <div className="flex items-center gap-2">
-            {/* Add Flip (left of filter) */}
             <Link
               href="/add"
               className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800"
@@ -93,7 +87,6 @@ export default function HomePage() {
               Add Flip
             </Link>
 
-            {/* Filter */}
             <label htmlFor="feed-filter" className="sr-only">
               Filter flips
             </label>
@@ -111,7 +104,6 @@ export default function HomePage() {
               ))}
             </select>
 
-            {/* Optional: match page theme to selected lens */}
             {filter !== "all" && filter !== timelineId ? (
               <button
                 className="text-xs underline"
@@ -124,7 +116,6 @@ export default function HomePage() {
           </div>
         </header>
 
-        {/* Feed */}
         {loading && <div className="text-gray-600 text-sm">Loading feed…</div>}
 
         {!loading && !hasPosts && (
