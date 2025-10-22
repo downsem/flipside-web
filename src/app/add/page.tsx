@@ -6,27 +6,31 @@ export const revalidate = 0;
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { db, auth, serverTimestamp } from "@/app/firebase";
-import { addDoc, collection } from "firebase/firestore";
+import { db, auth } from "@/app/firebase";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
 export default function AddPage() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+
   const canSubmit = text.trim().length > 0 && !busy;
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+
     try {
       setBusy(true);
       const user = auth.currentUser;
       const authorId = user?.uid || "anon";
+
       await addDoc(collection(db, "posts"), {
         originalText: text.trim(),
-        filteredText: "", // legacy/optional
+        filteredText: "", // optional legacy field
         authorId,
         createdAt: serverTimestamp(),
       });
+
       setText("");
       alert("Added!");
     } catch (err) {

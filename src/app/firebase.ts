@@ -2,9 +2,8 @@
 "use client";
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-import type { FirebaseApp } from "firebase/app"; // <-- type-only import (required)
 import { getFirestore } from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -15,21 +14,13 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-// Reuse the app if it already exists (Vercel/Next hot reload safe)
-const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
+// Avoid re-initializing in the client
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-// Ensure an auth session exists (anonymous is fine for MVP)
-if (typeof window !== "undefined") {
-  onAuthStateChanged(auth, (u) => {
-    if (!u) {
-      signInAnonymously(auth).catch((e) =>
-        console.error("Anon sign-in failed:", e)
-      );
-    }
-  });
-}
-
-export default app;
+// ensure an anonymous session exists for MVP
+onAuthStateChanged(auth, (u) => {
+  if (!u) signInAnonymously(auth).catch(console.error);
+});
