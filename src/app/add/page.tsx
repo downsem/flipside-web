@@ -1,12 +1,11 @@
 // src/app/add/page.tsx
 "use client";
-
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { db, auth } from "@/app/firebase";
+import { db, auth } from "../firebase";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
 export default function AddPage() {
@@ -26,7 +25,7 @@ export default function AddPage() {
 
       await addDoc(collection(db, "posts"), {
         originalText: text.trim(),
-        filteredText: "", // optional legacy field
+        filteredText: "", // legacy field (safe no-op)
         authorId,
         createdAt: serverTimestamp(),
       });
@@ -57,6 +56,7 @@ export default function AddPage() {
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
+
         <button
           type="submit"
           disabled={!canSubmit}

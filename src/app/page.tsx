@@ -1,6 +1,5 @@
 // src/app/page.tsx
 "use client";
-
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -13,8 +12,8 @@ import {
   orderBy,
   query,
   limit,
+  Timestamp,
 } from "firebase/firestore";
-import type { Timestamp } from "firebase/firestore";
 
 import PostCard from "@/components/PostCard";
 import { useTheme } from "@/context/ThemeContext";
@@ -31,13 +30,17 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ||
   "https://flipside.fly.dev";
 
+// Page filter: "all" shows the original + generated flips (no lens filter)
 type FilterKind = "all" | TimelineId;
 
 export default function HomePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ThemeContext still controls the page theme
   const { timelineId, setTimeline, theme } = useTheme();
+
+  // Local feed filter (independent of theme)
   const [filter, setFilter] = useState<FilterKind>("all");
 
   useEffect(() => {
@@ -46,6 +49,7 @@ export default function HomePage() {
       orderBy("createdAt", "desc"),
       limit(50)
     );
+
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -66,20 +70,25 @@ export default function HomePage() {
         setLoading(false);
       }
     );
+
     return () => unsub();
   }, []);
 
   const hasPosts = posts.length > 0;
 
+  // Themed page background; cards themselves stay white for readability
   const pageBg = theme?.colors?.bg ?? "#f8fafc";
   const pageText = theme?.colors?.text ?? "#111";
 
   return (
     <main className="min-h-screen" style={{ background: pageBg, color: pageText }}>
       <div className="max-w-3xl mx-auto p-4 md:p-6">
+        {/* Header */}
         <header className="mb-6 flex items-center justify-between gap-3">
           <h1 className="text-3xl font-bold">FlipSide</h1>
+
           <div className="flex items-center gap-2">
+            {/* Add Flip (left of filter) */}
             <Link
               href="/add"
               className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800"
@@ -87,6 +96,7 @@ export default function HomePage() {
               Add Flip
             </Link>
 
+            {/* Lens filter */}
             <label htmlFor="feed-filter" className="sr-only">
               Filter flips
             </label>
@@ -104,6 +114,7 @@ export default function HomePage() {
               ))}
             </select>
 
+            {/* Optional: keep theme in sync with the chosen lens */}
             {filter !== "all" && filter !== timelineId ? (
               <button
                 className="text-xs underline"
@@ -116,6 +127,7 @@ export default function HomePage() {
           </div>
         </header>
 
+        {/* Feed */}
         {loading && <div className="text-gray-600 text-sm">Loading feed…</div>}
 
         {!loading && !hasPosts && (
@@ -130,7 +142,15 @@ export default function HomePage() {
 
         <div className="space-y-6">
           {posts.map((post) => (
-            <PostCard key={post.id} post={post} apiBase={API_BASE} filter={filter} />
+            <PostCard
+              key={post.id}
+              post={post}
+              apiBase={API_BASE}
+              // SwipeDeck/PostCard should respect this filter:
+              // - "all" => original + all flips
+              // - a TimelineId => only that lens’ flip(s)
+              filter={filter}
+            />
           ))}
         </div>
       </div>
