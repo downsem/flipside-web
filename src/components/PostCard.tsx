@@ -1,75 +1,50 @@
 // src/components/PostCard.tsx
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import SwipeDeck from "./SwipeDeck";
-import type { PromptKey } from "@/utils/prompts";
 import type { TimelineId } from "@/theme/timelines";
 
-type FilterKind = "all" | TimelineId;
-
-type Post = {
-  id: string;
-  originalText: string;
-  authorId?: string;
+// Keep this in sync with what SwipeDeck calls back with
+export type VoteArgs = {
+  index: number;
+  key: TimelineId | "original";
+  value: "up" | "down" | null;
+  text: string;
 };
 
-type Candidate = { candidate_id: string; text: string };
-type Flip = { flip_id: string; original: string; candidates: Candidate[] };
+// Minimal post shape used by this component
+export type Post = {
+  id: string;
+  originalText: string;
+  authorId: string;
+  createdAt?: any;
+};
+
+type Props = {
+  post: Post;
+  apiBase: string;
+  // Filter passed from HomePage: "all" means show original + all flips
+  filter: "all" | TimelineId;
+  // NEW: align with SwipeDeck’s callback signature
+  onVote?: (args: VoteArgs) => void | Promise<void>;
+};
 
 export default function PostCard({
   post,
   apiBase,
   filter,
-}: {
-  post: Post;
-  apiBase: string;
-  filter: FilterKind;
-}) {
-  const [replyDraft, setReplyDraft] = useState("");
-
-  const initialFlips: Flip[] = [
-    {
-      flip_id: post.id,
-      original: post.originalText,
-      candidates: [],
-    },
-  ];
-
+  onVote,
+}: Props) {
   return (
-    <div className="rounded-3xl border p-4 bg-white shadow-sm">
+    <div className="rounded-3xl bg-white shadow-sm p-4 md:p-6">
       <SwipeDeck
-        initialFlips={initialFlips}
+        post={post}
         apiBase={apiBase}
-        filterPrompt={filter}   // <— NEW
-        onVote={async ({
-          key,
-          value,
-          text,
-          index,
-        }: {
-          index: number;
-          key: PromptKey | "original";
-          value: "up" | "down" | null;
-          text: string;
-        }) => {
-          if (!value) return;
-          // persist if desired
-        }}
-        onReply={async ({
-          key,
-          text,
-          flipText,
-          index,
-        }: {
-          index: number;
-          key: PromptKey | "original";
-          text: string;
-          flipText: string;
-        }) => {
-          // persist if desired
-          setReplyDraft("");
-        }}
+        // renamed in SwipeDeck to clarify what it filters by
+        filterPrompt={filter}
+        // Forward as-is; provide a no-op default to avoid undefined checks
+        onVote={onVote ?? (() => {})}
       />
     </div>
   );
