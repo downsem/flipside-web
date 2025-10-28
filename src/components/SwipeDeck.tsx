@@ -2,291 +2,268 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
-import { useTheme } from "@/context/ThemeContext";
-import { postFeedback } from "@/lib/feedback";
 import type { TimelineId } from "@/theme/timelines";
 
-type Candidate = { candidate_id: string; text: string };
-type Flip = { flip_id: string; original: string; candidates: Candidate[] };
-type FilterKind = "all" | TimelineId;
+// ---- Types --------------------------------------------------------------
 
-type Props = {
-  initialFlips?: Flip[];
-  apiBase: string;
-  filterPrompt: FilterKind; // <- NEW
-  onVote?: (args: {
-    index: number;
-    key: "original" | string;
-    value: "up" | "down" | null;
-    text: string;
-  }) => Promise<void> | void;
-  onReply?: (args: {
-    index: number;
-    key: "original" | string;
-    text: string;
-    flipText: string;
-  }) => Promise<void> | void;
+export type FilterKind = "all" | TimelineId;
+
+export type Post = {
+  id: string;
+  originalText: string;
+  authorId: string;
+  // createdAt?: Timestamp | null   // not needed here
 };
 
-const ORDER: TimelineId[] = ["calm", "bridge", "cynical", "opposite", "playful"];
+type SwipeDeckProps = {
+  post: Post;
+  apiBase: string;          // e.g. https://flipside.fly.dev
+  filter: FilterKind;       // "all" or a lens id
+  onVote?: (postId: string, dir: "up" | "down") => void;
+  onDone?: () => void;      // called when card is swiped away
+};
 
-export default function SwipeDeck({
-  initialFlips = [],
+// ---- Simple in-memory cache to avoid repeat calls across re-renders ----
+type CacheKey = `${string}:${string}`; // `${post.id}:${lens}`
+const flipCache = new Map<CacheKey, string>(); // generated text per lens
+
+// ---- Helpers ------------------------------------------------------------
+
+async function generateFlip({
   apiBase,
-  filterPrompt,
-  onVote,
-  onReply,
-}: Props) {
-  const { timelineId, theme } = useTheme();
-  const [flips, setFlips] = useState<Flip[]>(
-    Array.isArray(initialFlips) ? initialFlips : []
-  );
+  originalText,
+  lens,
+  signal,
+}: {
+  apiBase: string;
+  originalText: string;
+  lens: TimelineId;
+  signal: AbortSignal;
+}): Promise<string> {
+  const res = await fetch(`${apiBase.replace(/\/$/, "")}/flips`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // If your backend ignores `lens`, that's fine; keeping it here for alignment.
+    body: JSON.stringify({ text: originalText, lens }),
+    signal,
+  });
 
-  // we only render ONE card (the current) to avoid the stacked look
-  const [currentIdx, setCurrentIdx] = useState(0);
-
-  // Did we generate flips for this post yet?
-  const [generated, setGenerated] = useState(false);
-  const topFlip = flips[currentIdx];
-
-  // Generate on demand:
-  // - if filter = "all": generate all lenses (ORDER)
-  // - if filter = specific id: generate only that one lens
-  useEffect(() => {
-    // nothing to generate without an original
-    const base = flips[0];
-    if (!base?.original) return;
-
-    // already generated?
-    if (generated) return;
-
-    const go = async () => {
-      try {
-        const kinds =
-          filterPrompt === "all" ? ORDER : [filterPrompt as TimelineId];
-
-        const resp = await fetch(`${apiBase}/flips`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            originalText: base.original,
-            promptKinds: kinds,
-          }),
-        });
-        if (!resp.ok) throw new Error(`flips failed: ${resp.status}`);
-        const data = await resp.json();
-
-        // shape into our local Flip structure (single post)
-        const created: Candidate[] = (data.flips || []).map(
-          (f: { promptKind: string; text: string }, i: number) => ({
-            candidate_id: `${i}`,
-            text: f.text || "",
-          })
-        );
-
-        setFlips([
-          {
-            flip_id: base.flip_id,
-            original: base.original,
-            candidates: created,
-          },
-        ]);
-        setGenerated(true);
-
-        // If filter = specific prompt → skip original and show the one generated candidate.
-        if (filterPrompt !== "all") {
-          setCurrentIdx(0); // we still have a single Flip object; the card shows candidate[0]
-        }
-      } catch (e) {
-        console.error("generate error", e);
-      }
-    };
-
-    go();
-  }, [apiBase, flips, generated, filterPrompt]);
-
-  // Card view model
-  const showingOriginal =
-    filterPrompt === "all" && currentIdx === 0 && (flips[0]?.candidates?.length ?? 0) >= 0;
-
-  // Readable text displayed on the card
-  const displayText = useMemo(() => {
-    const f = flips[0];
-    if (!f) return "";
-    if (filterPrompt === "all") {
-      // original first, then candidate N (we model it as still index 0 flip)
-      const step = currentIdx;
-      if (step === 0) return f.original;
-      return f.candidates[step - 1]?.text ?? "";
+  if (!res.ok) {
+    // Important: do NOT retry on 429 (rate limited).
+    if (res.status === 429) {
+      throw new Error("flips failed: 429 (Too Many Requests)");
     }
-    // specific lens: just show candidate[0]
-    return f.candidates[0]?.text ?? "";
-  }, [flips, currentIdx, filterPrompt]);
-
-  // How many steps are there?
-  const totalSteps =
-    filterPrompt === "all"
-      ? 1 + (flips[0]?.candidates?.length ?? 0) // original + N candidates
-      : Math.min(1, (flips[0]?.candidates?.length ?? 0)); // exactly 1
-
-  const canPrev = filterPrompt === "all" ? currentIdx > 0 : false;
-  const canNext = currentIdx < totalSteps - 1;
-
-  // vote handler (kept simple)
-  const emitVote = async (dir: 1 | -1) => {
-    const key =
-      filterPrompt === "all"
-        ? currentIdx === 0
-          ? "original"
-          : ORDER[currentIdx - 1]
-        : (filterPrompt as TimelineId);
-
-    const text = displayText;
-    try {
-      await onVote?.({
-        index: currentIdx,
-        key,
-        value: dir === 1 ? "up" : "down",
-        text,
-      });
-      // send feedback ping to your web API if you want
-      void postFeedback({
-        flip_id: flips[0]?.flip_id ?? "unknown",
-        candidate_id: `${currentIdx}`,
-        signal: dir,
-        timeline_id: key === "original" ? "original" : String(key),
-        seen_ms: 1500,
-        context: { device: "web" },
-      });
-    } catch (e) {
-      console.warn("vote error", e);
-    }
-  };
-
-  // Reply handler (MVP demo)
-  const [replyText, setReplyText] = useState("");
-  const submitReply = async () => {
-    const key =
-      filterPrompt === "all"
-        ? currentIdx === 0
-          ? "original"
-          : ORDER[currentIdx - 1]
-        : (filterPrompt as TimelineId);
-
-    const flipText = displayText;
-    try {
-      await onReply?.({
-        index: currentIdx,
-        key,
-        text: replyText,
-        flipText,
-      });
-      setReplyText("");
-      alert("Thanks for the comment!");
-    } catch (e) {
-      console.warn("reply error", e);
-    }
-  };
-
-  // Empty state
-  if (!flips[0]) {
-    return (
-      <div className="rounded-xl p-6 text-sm opacity-70 border">
-        No content.
-      </div>
-    );
+    const msg = await res.text().catch(() => "");
+    throw new Error(`flips failed: ${res.status} ${msg}`);
   }
 
+  // Expecting: { candidates: [{ text: "..." }, ...] } or { text: "..." }
+  const data = await res.json();
+  const text =
+    data?.text ??
+    data?.candidate?.text ??
+    data?.candidates?.[0]?.text ??
+    "";
+
+  if (!text) throw new Error("flips failed: empty response");
+  return text;
+}
+
+// ---- Component ----------------------------------------------------------
+
+export default function SwipeDeck({
+  post,
+  apiBase,
+  filter,
+  onVote,
+  onDone,
+}: SwipeDeckProps) {
+  const lens: TimelineId | null = filter === "all" ? null : (filter as TimelineId);
+
+  const [genText, setGenText] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(!!lens); // only load when a lens is chosen
+  const [error, setError] = useState<string | null>(null);
+
+  // Guard to prevent duplicate generation per mount/render
+  const generatedRef = useRef<boolean>(false);
+  // Track current request to abort on unmount or filter change
+  const abortRef = useRef<AbortController | null>(null);
+
+  // ---- Fetch on lens change (once per post+lens) -----------------------
+  useEffect(() => {
+    // Reset state whenever post or lens changes
+    setError(null);
+
+    if (!lens) {
+      // "all" shows original; no generation needed
+      setLoading(false);
+      setGenText("");
+      generatedRef.current = false;
+      // Abort any in-flight request
+      abortRef.current?.abort();
+      abortRef.current = null;
+      return;
+    }
+
+    const key: CacheKey = `${post.id}:${lens}`;
+    const cached = flipCache.get(key);
+    if (cached) {
+      setGenText(cached);
+      setLoading(false);
+      generatedRef.current = true;
+      return;
+    }
+
+    if (generatedRef.current) {
+      // already kicked off in this mount
+      return;
+    }
+    generatedRef.current = true;
+
+    setLoading(true);
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    (async () => {
+      try {
+        const text = await generateFlip({
+          apiBase,
+          originalText: post.originalText,
+          lens,
+          signal: ac.signal,
+        });
+        flipCache.set(key, text);
+        setGenText(text);
+        setLoading(false);
+      } catch (e: any) {
+        // If aborted, just bail silently
+        if (e?.name === "AbortError") return;
+
+        // Single soft retry for transient network errors (NOT for 429)
+        if (!String(e?.message || "").includes("429")) {
+          try {
+            const text = await generateFlip({
+              apiBase,
+              originalText: post.originalText,
+              lens,
+              signal: ac.signal,
+            });
+            flipCache.set(key, text);
+            setGenText(text);
+            setLoading(false);
+            return;
+          } catch (e2: any) {
+            if (e2?.name === "AbortError") return;
+            setError(String(e2?.message || "Generation failed"));
+            setLoading(false);
+            console.error("generate error", e2);
+            return;
+          }
+        }
+
+        setError(String(e?.message || "Generation failed"));
+        setLoading(false);
+        console.error("generate error", e);
+      }
+    })();
+
+    // cleanup on unmount / prop change
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      // let the next effect call decide generatedRef again
+      generatedRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post.id, post.originalText, lens, apiBase]);
+
+  // ---- Swipe logic (basic) ---------------------------------------------
+  // Simple touch-based swipe that calls onVote and then onDone
+  const startX = useRef<number | null>(null);
+  const deltaX = useRef<number>(0);
+
+  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    startX.current = e.touches[0].clientX;
+    deltaX.current = 0;
+  };
+
+  const onTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (startX.current == null) return;
+    deltaX.current = e.touches[0].clientX - startX.current;
+  };
+
+  const onTouchEnd = () => {
+    const d = deltaX.current;
+    startX.current = null;
+    deltaX.current = 0;
+    // Threshold ~ 60px
+    if (Math.abs(d) > 60) {
+      const dir: "up" | "down" = d > 0 ? "up" : "down";
+      onVote?.(post.id, dir);
+      onDone?.();
+    }
+  };
+
+  // ---- What text to display --------------------------------------------
+  const displayText = useMemo(() => {
+    if (!lens) return post.originalText;
+    return genText || "";
+  }, [lens, post.originalText, genText]);
+
+  // ---- Render -----------------------------------------------------------
   return (
-    <div className="relative">
-      {/* Single card */}
-      <motion.div
-        className="rounded-xl border shadow-sm bg-white"
-        initial={theme.motion.enter}
-        animate={theme.motion.animate}
-        transition={theme.motion.transition as any}
-        drag="x"
-        dragConstraints={{ left: 0, right: 0 }}
-        onDragEnd={(_, info) => {
-          const x = info.offset.x;
-          if (x > 120 && canNext) setCurrentIdx((i) => i + 1);
-          else if (x < -120 && canPrev) setCurrentIdx((i) => i - 1);
-        }}
-      >
-        <div className="p-5 space-y-4">
-          {/* (No icon/category per your request) */}
+    <div
+      className="w-full select-none"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
+      <article className="rounded-3xl bg-white shadow p-5">
+        {/* Status row */}
+        {lens ? (
+          <>
+            {loading && (
+              <p className="text-sm text-gray-500">Generating {lens}…</p>
+            )}
+            {error && (
+              <p className="text-sm text-red-600">
+                {error.includes("429")
+                  ? "Slowed down for a moment—too many requests. Try again shortly."
+                  : error}
+              </p>
+            )}
+          </>
+        ) : null}
 
-          {/* Body text */}
-          <p className="text-base leading-6 whitespace-pre-wrap">{displayText}</p>
-
-          {/* Vote + Nav */}
-          <div className="flex items-center justify-between pt-2">
-            <div className="flex gap-2">
-              <button
-                className="px-3 py-2 rounded-md border"
-                onClick={() => emitVote(-1)}
-                aria-label="Downvote"
-              >
-                👎
-              </button>
-              <button
-                className="px-3 py-2 rounded-md border"
-                onClick={() => emitVote(1)}
-                aria-label="Upvote"
-              >
-                👍
-              </button>
-            </div>
-
-            {/* Prev/Next (auto-hidden on small screens via CSS) */}
-            <div className="hidden sm:flex items-center gap-2">
-              <button
-                className="px-3 py-2 rounded-md border disabled:opacity-40"
-                onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
-                disabled={!canPrev}
-                aria-label="Previous"
-              >
-                Prev
-              </button>
-              <button
-                className="px-3 py-2 rounded-md border disabled:opacity-40"
-                onClick={() =>
-                  setCurrentIdx((i) => Math.min(totalSteps - 1, i + 1))
-                }
-                disabled={!canNext}
-                aria-label="Next"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-
-          {/* Reply box (MVP) */}
-          <div className="pt-2 space-y-2">
-            <textarea
-              className="w-full rounded-lg border p-2 text-sm"
-              placeholder="Write a quick comment…"
-              value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
-            />
-            <button
-              className="px-3 py-2 rounded-md border"
-              onClick={submitReply}
-              disabled={replyText.trim().length === 0}
-            >
-              Reply
-            </button>
-          </div>
+        {/* Content */}
+        <div className="prose max-w-none text-gray-900 whitespace-pre-wrap">
+          {displayText || (loading ? "" : "Nothing to show for this lens.")}
         </div>
-      </motion.div>
 
-      {/* When at the end and a specific filter is on, show “Nothing else to see” */}
-      {filterPrompt !== "all" && !canNext && (
-        <div className="text-center text-sm opacity-70 mt-3">
-          Nothing else to see in this lens.
+        {/* Vote buttons as a11y backup to swipe */}
+        <div className="mt-4 flex gap-3">
+          <button
+            aria-label="Downvote"
+            className="rounded-xl border px-3 py-2"
+            onClick={() => {
+              onVote?.(post.id, "down");
+              onDone?.();
+            }}
+          >
+            👎
+          </button>
+          <button
+            aria-label="Upvote"
+            className="rounded-xl border px-3 py-2"
+            onClick={() => {
+              onVote?.(post.id, "up");
+              onDone?.();
+            }}
+          >
+            👍
+          </button>
         </div>
-      )}
+      </article>
     </div>
   );
 }
