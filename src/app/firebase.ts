@@ -2,7 +2,7 @@
 "use client";
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, serverTimestamp as fsServerTimestamp } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 
 const firebaseConfig = {
@@ -14,13 +14,17 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-// Avoid re-initializing in the client
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+export const serverTimestamp = fsServerTimestamp;
 
-// ensure an anonymous session exists for MVP
+// keep an anon session at all times for writes
 onAuthStateChanged(auth, (u) => {
-  if (!u) signInAnonymously(auth).catch(console.error);
+  if (!u) {
+    signInAnonymously(auth).catch((err) => {
+      console.error("Anon sign-in failed:", err);
+    });
+  }
 });

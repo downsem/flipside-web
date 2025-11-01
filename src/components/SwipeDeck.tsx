@@ -1,24 +1,22 @@
 // src/components/SwipeDeck.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TimelineId } from "@/theme/timelines";
-import type { PromptKey } from "@/utils/prompts";
 
 export type Candidate = { candidate_id: string; text: string };
 export type Flip = { flip_id: string; original: string; candidates: Candidate[] };
 
-// Unified arg shapes used across app
 export type VoteArgs = {
   index: number;
-  key: PromptKey | "original";
+  key: TimelineId | "original";
   value: "up" | "down";
   text: string;
 };
 
 export type ReplyArgs = {
   index: number;
-  key: PromptKey | "original";
+  key: TimelineId | "original";
   text: string;
   flipText: string;
 };
@@ -26,116 +24,222 @@ export type ReplyArgs = {
 type Props = {
   initialFlips: Flip[];
   apiBase: string;
-
-  // "all" shows original + all candidates; otherwise a single lens
-  filterPrompt?: TimelineId | "all";
-
-  // ✅ New, unified signatures
+  filterPrompt: "all" | TimelineId;
   onVote?: (args: VoteArgs) => void | Promise<void>;
   onReply?: (args: ReplyArgs) => void | Promise<void>;
 };
 
+const ORDERED_LENSES: TimelineId[] = ["calm", "bridge", "cynical", "opposite", "playful"];
+
 export default function SwipeDeck({
   initialFlips,
   apiBase,
-  filterPrompt = "all",
+  filterPrompt,
   onVote,
   onReply,
 }: Props) {
-  // NOTE: Keep your existing implementation here. The important change is the prop types above.
-  // Below is a lightweight implementation to avoid type errors and to keep UI working.
-
+  const [flips, setFlips] = useState<Flip[]>(initialFlips);
+  const [replyDraft, setReplyDraft] = useState("");
   const [idx, setIdx] = useState(0);
-  const flips = initialFlips;
+  const [loadingLens, setLoadingLens] = useState<string | null>(null);
 
-  const current = flips[idx];
+  const current = flips[0]; // single-post deck (one flip with many candidates)
 
-  const visibleCards = useMemo(() => {
+  // Build the display stack depending on filter
+  const displayCards = useMemo(() => {
     if (!current) return [];
+
+    const originalCard = { key: "original" as const, text: current.original };
     if (filterPrompt === "all") {
-      return [
-        { key: "original" as const, text: current.original },
-        ...current.candidates.map((c) => ({ key: c.candidate_id as PromptKey, text: c.text })),
-      ];
+      const ordered = ORDERED_LENSES
+        .map((id) => {
+          const c = current.candidates.find((x) => x.candidate_id === id);
+          return c ? ({ key: id, text: c.text } as const) : null;
+        })
+        .filter(Boolean) as Array<{ key: TimelineId; text: string }>;
+      return [originalCard, ...ordered];
     } else {
-      // show only the candidate that matches this prompt id (by candidate_id)
-      const match = current.candidates.find((c) => c.candidate_id === filterPrompt);
-      return match ? [{ key: match.candidate_id as PromptKey, text: match.text }] : [];
+      // single lens
+      const c = current.candidates.find((x) => x.candidate_id === filterPrompt);
+      if (c) return [{ key: filterPrompt as TimelineId, text: c.text }];
+      return [originalCard]; // until we generate
     }
   }, [current, filterPrompt]);
 
+  // If user switches to a lens that hasn't been generated yet, fetch it once
+  const ensureLensGenerated = useCallback(async () => {
+    if (!current) return;
+    if (filterPrompt === "all") return; // all renders what exists
+    const exists = current.candidates.some((c) => c.candidate_id === filterPrompt);
+    if (exists) return;
+
+    try {
+      setLoadingLens(filterPrompt);
+      const res = await fetch("/api/flip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ original: current.original, prompt: filterPrompt }),
+      });
+      const data = await res.json();
+      if (!data?.ok || !data?.text) throw new Error("bad_response");
+      setFlips((prev) => {
+        const copy = [...prev];
+        copy[0] = {
+          ...copy[0],
+          candidates: [
+            ...copy[0].candidates,
+            { candidate_id: filterPrompt, text: data.text as string },
+          ],
+        };
+        return copy;
+      });
+    } catch (err) {
+      console.error("generate lens failed:", err);
+    } finally {
+      setLoadingLens(null);
+    }
+  }, [current, filterPrompt]);
+
+  useEffect(() => {
+    if (filterPrompt !== "all") {
+      void ensureLensGenerated();
+    }
+    // reset index on filter change
+    setIdx(0);
+  }, [filterPrompt, ensureLensGenerated]);
+
+  // Basic swipe/next UX
+  const goNext = () => setIdx((i) => Math.min(i + 1, Math.max(0, displayCards.length - 1)));
+  const goPrev = () => setIdx((i) => Math.max(i - 1, 0));
+
+  // keyboard
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") goNext();
+      if (e.key === "ArrowLeft") goPrev();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [displayCards.length]);
+
+  // touch
+  const touchStartX = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current == null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    if (dx < -30) goNext();
+    if (dx > 30) goPrev();
+    touchStartX.current = null;
+  };
+
+  const active = displayCards[idx] ?? null;
+
   if (!current) return null;
 
-  const goNext = () => setIdx((n) => Math.min(n + 1, flips.length - 1));
-
-  async function handleVote(dir: "up" | "down") {
-    if (!visibleCards.length) return;
-    const card = visibleCards[0];
-    const payload: VoteArgs = {
-      index: idx,
-      key: card.key,
-      value: dir,
-      text: card.text,
-    };
-    await onVote?.(payload);
-    goNext();
-  }
-
-  async function handleReply(text: string) {
-    if (!visibleCards.length) return;
-    const card = visibleCards[0];
-    const payload: ReplyArgs = {
-      index: idx,
-      key: card.key,
-      text,
-      flipText: card.text,
-    };
-    await onReply?.(payload);
-  }
-
   return (
-    <div className="rounded-2xl border p-4 bg-white">
-      {/* Card */}
-      <div className="min-h-[140px] whitespace-pre-wrap leading-relaxed">
-        {visibleCards.length ? visibleCards[0].text : "No content for this filter."}
+    <div
+      className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* Status bar */}
+      <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
+        <div className="flex items-center gap-2">
+          <span>{filterPrompt === "all" ? "Default (All)" : `Lens: ${filterPrompt}`}</span>
+          {loadingLens && <span>· generating…</span>}
+        </div>
+        <div>
+          {displayCards.length > 1 ? `${idx + 1} / ${displayCards.length}` : "1 / 1"}
+        </div>
+      </div>
+
+      {/* Card content */}
+      <div className="min-h-[120px] whitespace-pre-wrap leading-relaxed">
+        {active ? active.text : current.original}
       </div>
 
       {/* Actions */}
-      <div className="mt-4 flex items-center gap-3">
+      <div className="mt-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded-lg border px-3 py-1 text-sm"
+            onClick={() => {
+              goPrev();
+            }}
+          >
+            ◀ Prev
+          </button>
+          <button
+            className="rounded-lg border px-3 py-1 text-sm"
+            onClick={() => {
+              goNext();
+            }}
+          >
+            Next ▶
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded-lg border px-3 py-1 text-sm"
+            onClick={() => {
+              if (!active) return;
+              onVote?.({
+                index: idx,
+                key: (active.key as any) ?? "original",
+                value: "up",
+                text: active.text,
+              });
+              goNext();
+            }}
+          >
+            👍
+          </button>
+          <button
+            className="rounded-lg border px-3 py-1 text-sm"
+            onClick={() => {
+              if (!active) return;
+              onVote?.({
+                index: idx,
+                key: (active.key as any) ?? "original",
+                value: "down",
+                text: active.text,
+              });
+              goNext();
+            }}
+          >
+            👎
+          </button>
+        </div>
+      </div>
+
+      {/* Reply box */}
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          className="flex-1 rounded-lg border px-3 py-2 text-sm"
+          placeholder="Reply…"
+          value={replyDraft}
+          onChange={(e) => setReplyDraft(e.target.value)}
+        />
         <button
-          type="button"
-          onClick={() => handleVote("down")}
-          className="rounded-lg border px-3 py-1"
-        >
-          👎
-        </button>
-        <button
-          type="button"
-          onClick={() => handleVote("up")}
-          className="rounded-lg border px-3 py-1"
-        >
-          👍
-        </button>
-        {/* Minimal reply box (optional) */}
-        <form
-          className="ml-auto flex items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const fd = new FormData(e.currentTarget);
-            const txt = (fd.get("reply") as string) || "";
-            if (txt.trim()) handleReply(txt.trim());
-            (e.currentTarget.elements.namedItem("reply") as HTMLInputElement).value = "";
+          className="rounded-lg bg-black text-white px-3 py-2 text-sm disabled:opacity-50"
+          disabled={!active || replyDraft.trim().length === 0}
+          onClick={() => {
+            if (!active) return;
+            onReply?.({
+              index: idx,
+              key: (active.key as any) ?? "original",
+              text: replyDraft.trim(),
+              flipText: active.text,
+            });
+            setReplyDraft("");
           }}
         >
-          <input
-            name="reply"
-            placeholder="Reply…"
-            className="border rounded-lg px-2 py-1 text-sm"
-          />
-          <button className="rounded-lg bg-black text-white px-3 py-1 text-sm" type="submit">
-            Send
-          </button>
-        </form>
+          Send
+        </button>
       </div>
     </div>
   );

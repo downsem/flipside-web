@@ -1,10 +1,12 @@
 // src/components/PostCard.tsx
 "use client";
 
-import React, { useState } from "react";
-import SwipeDeck, { type Flip, type VoteArgs, type ReplyArgs } from "./SwipeDeck";
-import type { PromptKey } from "@/utils/prompts";
+import React from "react";
+import SwipeDeck from "./SwipeDeck";
+
+// type-only imports for TS strict mode
 import type { TimelineId } from "@/theme/timelines";
+import type { Flip, VoteArgs, ReplyArgs } from "./SwipeDeck";
 
 type Post = {
   id: string;
@@ -12,7 +14,15 @@ type Post = {
   authorId?: string;
 };
 
-type FilterKind = "all" | TimelineId;
+export type FilterKind = "all" | TimelineId;
+
+type Props = {
+  post: Post;
+  apiBase: string;
+  filter: FilterKind;
+  onVote?: (args: VoteArgs) => void | Promise<void>;
+  onReply?: (args: ReplyArgs) => void | Promise<void>;
+};
 
 export default function PostCard({
   post,
@@ -20,30 +30,23 @@ export default function PostCard({
   filter,
   onVote,
   onReply,
-}: {
-  post: Post;
-  apiBase: string;
-  filter?: FilterKind; // "all" | lens id
-  onVote?: (args: VoteArgs) => void | Promise<void>;
-  onReply?: (args: ReplyArgs) => void | Promise<void>;
-}) {
-  const [replyDraft, setReplyDraft] = useState("");
-
+}: Props) {
+  // Construct the initial flip structure for SwipeDeck
   const initialFlips: Flip[] = [
     {
       flip_id: post.id,
       original: post.originalText,
-      candidates: [], // candidates will be hydrated by SwipeDeck’s fetch logic (or remain empty)
+      candidates: [],
     },
   ];
 
   return (
-    <div className="rounded-3xl border p-4 bg-white shadow-sm">
+    <div className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
       <SwipeDeck
         initialFlips={initialFlips}
         apiBase={apiBase}
-        filterPrompt={filter ?? "all"}
-        // ✅ pass through the unified signatures (provide safe defaults)
+        filterPrompt={filter}
+        // Safe fallbacks to avoid undefined handlers
         onVote={onVote ?? (async () => {})}
         onReply={onReply ?? (async () => {})}
       />
