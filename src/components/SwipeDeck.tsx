@@ -1,3 +1,4 @@
+// src/components/SwipeDeck.tsx
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,9 +45,11 @@ export default function SwipeDeck({
 
   const current = flips[0];
 
+  // Build the display stack
   const displayCards = useMemo(() => {
     if (!current) return [];
     const originalCard = { key: "original" as const, text: current.original };
+
     if (filterPrompt === "all") {
       const ordered = ORDERED_LENSES
         .map((id) => {
@@ -55,66 +58,90 @@ export default function SwipeDeck({
         })
         .filter(Boolean) as Array<{ key: TimelineId; text: string }>;
       return [originalCard, ...ordered];
-    } else {
-      const c = current.candidates.find((x) => x.candidate_id === filterPrompt);
-      if (c) return [{ key: filterPrompt as TimelineId, text: c.text }];
-      return [originalCard];
     }
+
+    const c = current.candidates.find((x) => x.candidate_id === filterPrompt);
+    if (c) return [{ key: filterPrompt as TimelineId, text: c.text }];
+    return [originalCard]; // temporary until we generate
   }, [current, filterPrompt]);
 
-  // Generate a lens once if missing
-  const ensureLensGenerated = useCallback(async () => {
-    if (!current) return;
-    if (filterPrompt === "all") return;
-    const exists = current.candidates.some((c) => c.candidate_id === filterPrompt);
-    if (exists) return;
+  // Generate one lens
+  const generateLens = useCallback(
+    async (lens: TimelineId) => {
+      if (!current) return;
+      const exists = current.candidates.some((c) => c.candidate_id === lens);
+      if (exists) return;
 
-    try {
-      setLoadingLens(filterPrompt);
-      const res = await fetch("/api/flip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // 👇 send `lens` (route also accepts `prompt`, but this keeps us consistent)
-        body: JSON.stringify({ original: current.original, lens: filterPrompt }),
-      });
-      const data = await res.json();
-      if (!data?.ok || !data?.text) throw new Error(data?.error || "bad_response");
-      setFlips((prev) => {
-        const copy = [...prev];
-        copy[0] = {
-          ...copy[0],
-          candidates: [
-            ...copy[0].candidates,
-            { candidate_id: filterPrompt, text: data.text as string },
-          ],
-        };
-        return copy;
-      });
-    } catch (err) {
-      console.error("generate lens failed:", err);
-      alert("Could not generate this lens (API). Try another lens or reload.");
-    } finally {
-      setLoadingLens(null);
-    }
-  }, [current, filterPrompt]);
+      try {
+        setLoadingLens(lens);
+        const res = await fetch("/api/flip", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ original: current.original, lens }),
+        });
+        const data = await res.json();
+        if (!data?.ok || !data?.text) throw new Error("bad_response");
+        setFlips((prev) => {
+          const copy = [...prev];
+          copy[0] = {
+            ...copy[0],
+            candidates: [...copy[0].candidates, { candidate_id: lens, text: data.text as string }],
+          };
+          return copy;
+        });
+      } catch (e) {
+        console.error("generate lens failed:", e);
+        alert("Could not generate rewrite. Try again.");
+      } finally {
+        setLoadingLens(null);
+      }
+    },
+    [current]
+  );
 
+  // If user switches to a single lens, ensure it exists
   useEffect(() => {
-    if (filterPrompt !== "all") void ensureLensGenerated();
+    if (!current) return;
     setIdx(0);
-  }, [filterPrompt, ensureLensGenerated]);
+    if (filterPrompt !== "all") {
+      void generateLens(filterPrompt as TimelineId);
+    }
+  }, [filterPrompt, current, generateLens]);
 
-  const goNext = () => setIdx((i) => Math.min(i + 1, Math.max(0, displayCards.length - 1)));
-  const goPrev = () => setIdx((i) => Math.max(i - 1, 0));
+  // Next/Prev (+ auto-generate missing lenses when in "all")
+  const goNext = useCallback(async () => {
+    if (!current) return;
 
+    if (filterPrompt === "all") {
+      // compute next index and ensure that card exists (generate the next missing lens)
+      const nextIdx = Math.min(idx + 1, Math.max(0, displayCards.length)); // allow stepping to a yet-missing lens
+      // which lens would that be?
+      const have = new Set(current.candidates.map((c) => c.candidate_id));
+      const missingOrder = ORDERED_LENSES.filter((l) => !have.has(l));
+      if (nextIdx >= displayCards.length && missingOrder.length > 0) {
+        await generateLens(missingOrder[0]);
+      }
+      setIdx((i) => Math.min(i + 1, Math.max(0, displayCards.length)));
+    } else {
+      setIdx((i) => Math.min(i + 1, Math.max(0, displayCards.length - 1)));
+    }
+  }, [current, displayCards.length, filterPrompt, idx, generateLens]);
+
+  const goPrev = useCallback(() => {
+    setIdx((i) => Math.max(i - 1, 0));
+  }, []);
+
+  // keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") goNext();
+      if (e.key === "ArrowRight") void goNext();
       if (e.key === "ArrowLeft") goPrev();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [displayCards.length]);
+  }, [goNext, goPrev]);
 
+  // touch
   const touchStartX = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -122,7 +149,7 @@ export default function SwipeDeck({
   const onTouchEnd = (e: React.TouchEvent) => {
     if (touchStartX.current == null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
-    if (dx < -30) goNext();
+    if (dx < -30) void goNext();
     if (dx > 30) goPrev();
     touchStartX.current = null;
   };
@@ -150,8 +177,12 @@ export default function SwipeDeck({
 
       <div className="mt-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <button className="rounded-lg border px-3 py-1 text-sm" onClick={goPrev}>◀ Prev</button>
-          <button className="rounded-lg border px-3 py-1 text-sm" onClick={goNext}>Next ▶</button>
+          <button className="rounded-lg border px-3 py-1 text-sm" onClick={goPrev}>
+            ◀ Prev
+          </button>
+          <button className="rounded-lg border px-3 py-1 text-sm" onClick={() => void goNext()}>
+            Next ▶
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -159,18 +190,32 @@ export default function SwipeDeck({
             className="rounded-lg border px-3 py-1 text-sm"
             onClick={() => {
               if (!active) return;
-              onVote?.({ index: idx, key: (active.key as any) ?? "original", value: "up", text: active.text });
-              goNext();
+              onVote?.({
+                index: idx,
+                key: (active.key as any) ?? "original",
+                value: "up",
+                text: active.text,
+              });
+              void goNext();
             }}
-          >👍</button>
+          >
+            👍
+          </button>
           <button
             className="rounded-lg border px-3 py-1 text-sm"
             onClick={() => {
               if (!active) return;
-              onVote?.({ index: idx, key: (active.key as any) ?? "original", value: "down", text: active.text });
-              goNext();
+              onVote?.({
+                index: idx,
+                key: (active.key as any) ?? "original",
+                value: "down",
+                text: active.text,
+              });
+              void goNext();
             }}
-          >👎</button>
+          >
+            👎
+          </button>
         </div>
       </div>
 
