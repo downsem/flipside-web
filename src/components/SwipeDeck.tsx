@@ -29,6 +29,7 @@ type Props = {
   onReply?: (args: ReplyArgs) => void | Promise<void>;
 };
 
+// fixed order for the deck
 const ORDERED_LENSES: TimelineId[] = ["calm", "bridge", "cynical", "opposite", "playful"];
 const ORDER_ALL: Array<TimelineId | "original"> = ["original", ...ORDERED_LENSES];
 
@@ -44,84 +45,113 @@ export default function SwipeDeck({
   const [idx, setIdx] = useState(0);
   const [loadingLens, setLoadingLens] = useState<string | null>(null);
 
-  // keep a small guard so we don't POST the same lens multiple times
+  // prevent duplicate POSTs for the same lens during a session
   const requested = useRef<Set<string>>(new Set());
 
-  const current = flips[0]; // one flip with many candidates
+  const current = flips[0]; // one flip per card stack
 
-  // Build a fixed display stack
+  // Map candidates by id for quick lookup
+  const byId = useMemo(() => {
+    const m = new Map<string, string>();
+    if (current) {
+      for (const c of current.candidates) m.set(c.candidate_id, c.text);
+    }
+    return m;
+  }, [current]);
+
+  // Build deck data
   const displayCards = useMemo(() => {
     if (!current) return [];
-    const byId = new Map<string, string>();
-    for (const c of current.candidates) byId.set(c.candidate_id, c.text);
 
     if (filterPrompt === "all") {
-      // fixed 6 cards, never generate here
+      // fixed 6 cards
       return ORDER_ALL.map((k) => {
-        if (k === "original") return { key: "original" as const, text: current.original, hasText: true };
+        if (k === "original") {
+          return { key: "original" as const, text: current.original, hasText: true };
+        }
         const t = byId.get(k);
         return {
           key: k,
-          text: t ?? "(Not generated yet — choose this lens from the filter to create it.)",
+          text: t ?? "(Generating…)", // will kick off generation on first view
           hasText: Boolean(t),
         } as { key: TimelineId; text: string; hasText: boolean };
       });
-    } else {
-      // single lens mode: show only that lens (or original until generated)
-      if (filterPrompt === "calm" || filterPrompt === "bridge" || filterPrompt === "cynical" || filterPrompt === "opposite" || filterPrompt === "playful") {
-        const t = byId.get(filterPrompt);
-        return [
-          {
-            key: filterPrompt,
-            text: t ?? "(Generating…)",
-            hasText: Boolean(t),
-          } as { key: TimelineId; text: string; hasText: boolean },
-        ];
-      }
-      return [{ key: "original" as const, text: current.original, hasText: true }];
     }
-  }, [current, filterPrompt]);
 
-  // Generate a lens ONCE when in single-lens mode and it doesn't exist yet
-  const ensureLensGenerated = useCallback(async () => {
-    if (!current) return;
-    if (filterPrompt === "all") return; // never generate in "all"
-    const lens = filterPrompt;
-    const exists = current.candidates.some((c) => c.candidate_id === lens);
-    if (exists) return;
-    if (requested.current.has(lens)) return; // already in-flight/attempted
+    // single-lens mode: single card
+    if (ORDERED_LENSES.includes(filterPrompt)) {
+      const t = byId.get(filterPrompt);
+      return [
+        {
+          key: filterPrompt,
+          text: t ?? "(Generating…)",
+          hasText: Boolean(t),
+        } as { key: TimelineId; text: string; hasText: boolean },
+      ];
+    }
 
-    try {
+    // fallback: original only
+    return [{ key: "original" as const, text: current.original, hasText: true }];
+  }, [current, filterPrompt, byId]);
+
+  // Generate a specific lens once
+  const generateLens = useCallback(
+    async (lens: TimelineId) => {
+      if (!current) return;
+      if (byId.get(lens)) return; // already have text
+      if (requested.current.has(lens)) return; // already requested
       requested.current.add(lens);
-      setLoadingLens(lens);
-      const res = await fetch("/api/flip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ original: current.original, lens }),
-      });
-      const data = await res.json();
-      if (!data?.ok || !data?.text) throw new Error("bad_response");
-      setFlips((prev) => {
-        const copy = [...prev];
-        copy[0] = {
-          ...copy[0],
-          candidates: [...copy[0].candidates, { candidate_id: lens, text: data.text as string }],
-        };
-        return copy;
-      });
-    } catch (err) {
-      console.error("generate lens failed:", err);
-    } finally {
-      setLoadingLens(null);
-    }
-  }, [current, filterPrompt]);
 
+      try {
+        setLoadingLens(lens);
+        const res = await fetch("/api/flip", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ original: current.original, lens }),
+        });
+        const data = await res.json();
+        if (!data?.ok || !data?.text) throw new Error("bad_response");
+        setFlips((prev) => {
+          const copy = [...prev];
+          copy[0] = {
+            ...copy[0],
+            candidates: [...copy[0].candidates, { candidate_id: lens, text: data.text as string }],
+          };
+          return copy;
+        });
+      } catch (err) {
+        console.error("generate lens failed:", err);
+        // allow retry by removing from requested on failure
+        requested.current.delete(lens);
+      } finally {
+        setLoadingLens(null);
+      }
+    },
+    [current, byId]
+  );
+
+  // Kick off generation logic:
+  // - In "all": when you land on a lens card that has no text, generate it once.
+  // - In single-lens: generate that lens if missing.
   useEffect(() => {
-    // when filter changes, reset index and maybe generate
+    if (!current) return;
+    if (filterPrompt === "all") {
+      const activeCard = displayCards[idx];
+      if (activeCard && activeCard.key !== "original" && !activeCard.hasText) {
+        void generateLens(activeCard.key as TimelineId);
+      }
+    } else if (ORDERED_LENSES.includes(filterPrompt)) {
+      // single lens mode
+      const t = byId.get(filterPrompt);
+      if (!t) void generateLens(filterPrompt);
+    }
+  }, [current, filterPrompt, idx, displayCards, generateLens, byId]);
+
+  // when filter changes, reset index and clear in-flight request memory
+  useEffect(() => {
     setIdx(0);
     requested.current.clear();
-    if (filterPrompt !== "all") void ensureLensGenerated();
-  }, [filterPrompt, ensureLensGenerated]);
+  }, [filterPrompt]);
 
   // navigation — wrap around
   const goNext = () => {
@@ -141,6 +171,7 @@ export default function SwipeDeck({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayCards.length]);
 
   // touch
@@ -158,6 +189,11 @@ export default function SwipeDeck({
 
   const active = displayCards[idx] ?? null;
   if (!current) return null;
+
+  const canInteract =
+    !!active &&
+    (active as any).hasText !== false && // block when lens is still generating
+    !(loadingLens && active?.key === loadingLens);
 
   return (
     <div
@@ -195,7 +231,7 @@ export default function SwipeDeck({
         <div className="flex items-center gap-2">
           <button
             className="rounded-lg border px-3 py-1 text-sm disabled:opacity-50"
-            disabled={!active || (filterPrompt === "all" && (active as any).hasText === false)}
+            disabled={!canInteract}
             onClick={() => {
               if (!active) return;
               onVote?.({
@@ -211,7 +247,7 @@ export default function SwipeDeck({
           </button>
           <button
             className="rounded-lg border px-3 py-1 text-sm disabled:opacity-50"
-            disabled={!active || (filterPrompt === "all" && (active as any).hasText === false)}
+            disabled={!canInteract}
             onClick={() => {
               if (!active) return;
               onVote?.({
@@ -238,11 +274,7 @@ export default function SwipeDeck({
         />
         <button
           className="rounded-lg bg-black text-white px-3 py-2 text-sm disabled:opacity-50"
-          disabled={
-            !active ||
-            replyDraft.trim().length === 0 ||
-            (filterPrompt === "all" && (active as any).hasText === false)
-          }
+          disabled={!canInteract || replyDraft.trim().length === 0}
           onClick={() => {
             if (!active) return;
             onReply?.({
