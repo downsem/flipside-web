@@ -1,4 +1,3 @@
-// src/components/PostCard.tsx
 "use client";
 
 import React from "react";
@@ -34,19 +33,17 @@ export default function PostCard({
     {
       flip_id: post.id,
       original: post.originalText,
-      candidates: [], // will fill as lenses generate
+      candidates: [],
     },
   ];
 
   return (
-    <div className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
-      <SwipeDeck
-        initialFlips={initialFlips}
-        apiBase={apiBase}
-        filterPrompt={filter}
-        onVote={onVote ?? (async () => {})}
-        onReply={onReply ?? (async () => {})}
-      />
-    </div>
+    <SwipeDeck
+      initialFlips={initialFlips}
+      apiBase={apiBase}
+      filterPrompt={filter}
+      onVote={onVote}
+      onReply={onReply}
+    />
   );
 }
