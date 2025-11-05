@@ -4,7 +4,6 @@
 import React from "react";
 import SwipeDeck from "./SwipeDeck";
 
-// type-only imports for TS strict mode
 import type { TimelineId } from "@/theme/timelines";
 import type { Flip, VoteArgs, ReplyArgs } from "./SwipeDeck";
 
@@ -31,12 +30,11 @@ export default function PostCard({
   onVote,
   onReply,
 }: Props) {
-  // Construct the initial flip structure for SwipeDeck
   const initialFlips: Flip[] = [
     {
       flip_id: post.id,
       original: post.originalText,
-      candidates: [],
+      candidates: [], // will fill as lenses generate
     },
   ];
 
@@ -46,7 +44,6 @@ export default function PostCard({
         initialFlips={initialFlips}
         apiBase={apiBase}
         filterPrompt={filter}
-        // Safe fallbacks to avoid undefined handlers
         onVote={onVote ?? (async () => {})}
         onReply={onReply ?? (async () => {})}
       />

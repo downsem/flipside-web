@@ -1,30 +1,45 @@
 // src/app/add/page.tsx
 "use client";
-export const dynamic = "force-dynamic"; // do not prerender; no revalidate export
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { db, auth } from "../firebase";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db, auth, serverTimestamp } from "../firebase";
+import { addDoc, collection } from "firebase/firestore";
+import { signInAnonymously } from "firebase/auth";
 
 export default function AddPage() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const canSubmit = text.trim().length > 0 && !busy;
 
+  const ensureUser = async () => {
+    if (!auth.currentUser) {
+      await signInAnonymously(auth).catch((e) =>
+        console.error("anon sign-in failed:", e)
+      );
+    }
+    return auth.currentUser;
+  };
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+
     try {
       setBusy(true);
-      const user = auth.currentUser;
-      const authorId = user?.uid || "anon";
+      const user = await ensureUser();
+      if (!user) throw new Error("no_user");
+
+      // Must exactly match the Firestore rules shape:
+      // { originalText, authorId, createdAt }
       await addDoc(collection(db, "posts"), {
         originalText: text.trim(),
-        filteredText: "", // legacy/optional
-        authorId,
+        authorId: user.uid,
         createdAt: serverTimestamp(),
       });
+
       setText("");
       alert("Added!");
     } catch (err) {
