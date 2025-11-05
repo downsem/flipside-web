@@ -1,60 +1,51 @@
 // src/app/page.tsx
 "use client";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-
-import { db, auth, serverTimestamp } from "./firebase";
+import { db, auth } from "./firebase";
 import {
+  addDoc,
   collection,
+  limit,
   onSnapshot,
   orderBy,
   query,
-  limit,
-  Timestamp,
-  doc,
-  setDoc,
-  deleteDoc,
-  addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
-
-import PostCard, { type FilterKind } from "@/components/PostCard";
+import PostCard from "@/components/PostCard";
 import { useTheme } from "@/context/ThemeContext";
 import { TIMELINES, type TimelineId } from "@/theme/timelines";
-import { signInAnonymously } from "firebase/auth";
+import type { FilterKind } from "@/components/PostCard";
 
-// -------- Types --------
 type Post = {
   id: string;
   originalText: string;
   authorId: string;
-  createdAt?: Timestamp | null;
+  createdAt?: any;
 };
 
-// Your API base (only used by SwipeDeck when it has to call /api/flip)
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "";
-
-// ---------------------------------------
 
 export default function HomePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Theme + filter
+  // theme + filter
   const { timelineId, setTimeline, theme } = useTheme();
   const [filter, setFilter] = useState<FilterKind>("all");
 
-  // Feed subscription
+  // keep theme in sync with filter (when not "all")
   useEffect(() => {
-    const q = query(
-      collection(db, "posts"),
-      orderBy("createdAt", "desc"),
-      limit(50)
-    );
+    if (filter !== "all" && filter !== timelineId) {
+      setTimeline(filter as TimelineId);
+    }
+  }, [filter, timelineId, setTimeline]);
 
+  // subscribe to recent posts
+  useEffect(() => {
+    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(50));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -71,99 +62,50 @@ export default function HomePage() {
         setLoading(false);
       },
       (err) => {
-        console.error("Feed subscription failed:", err);
+        console.error("feed subscription failed:", err);
         setLoading(false);
       }
     );
-
     return () => unsub();
   }, []);
 
-  // Keep page theme synced to filter (no more "Match theme" button)
-  useEffect(() => {
-    if (filter !== "all" && filter !== timelineId) {
-      setTimeline(filter as TimelineId);
-    }
-  }, [filter, timelineId, setTimeline]);
-
-  // Ensure we always have an anon user before any write
-  const ensureUser = async () => {
-    if (!auth.currentUser) {
-      await signInAnonymously(auth).catch((e) =>
-        console.error("anon sign-in failed:", e)
-      );
-    }
-    return auth.currentUser;
-  };
-
-  // Votes: original => likes_original; lenses => votes collection
-  const makeOnVote = (postId: string) => {
-    return async (args: {
-      index: number;
-      key: TimelineId | "original";
-      value: "up" | "down";
-      text: string;
-    }) => {
-      const user = await ensureUser();
-      if (!user) return;
-
-      try {
-        if (args.key === "original") {
-          const likeRef = doc(db, "posts", postId, "likes_original", user.uid);
-          if (args.value === "up") {
-            await setDoc(likeRef, { createdAt: serverTimestamp() });
-          } else {
-            await deleteDoc(likeRef).catch(() => {});
-          }
-        } else {
-          await addDoc(collection(db, "posts", postId, "votes"), {
-            userId: user.uid,
-            candidateId: args.key,
-            signal: args.value, // "up" | "down"
-            createdAt: serverTimestamp(),
-          });
-        }
-      } catch (err) {
-        console.error("vote write failed:", err);
-      }
-    };
-  };
-
-  // Replies: original => replies_original; lenses => replies
-  const makeOnReply = (postId: string) => {
-    return async (args: {
-      index: number;
-      key: TimelineId | "original";
-      text: string;
-      flipText: string;
-    }) => {
-      const user = await ensureUser();
-      if (!user) return;
-
-      try {
-        if (args.key === "original") {
-          await addDoc(collection(db, "posts", postId, "replies_original"), {
-            text: args.text,
-            authorId: user.uid,
-            createdAt: serverTimestamp(),
-          });
-        } else {
-          await addDoc(collection(db, "posts", postId, "replies"), {
-            text: args.text,
-            authorId: user.uid,
-            candidateId: args.key,
-            createdAt: serverTimestamp(),
-          });
-        }
-      } catch (err) {
-        console.error("reply write failed:", err);
-      }
-    };
-  };
-
-  const hasPosts = posts.length > 0;
   const pageBg = theme?.colors?.bg ?? "#f8fafc";
   const pageText = theme?.colors?.text ?? "#111";
+
+  // Handlers: persist vote & reply
+  async function handleVote(args: {
+    postId: string;
+    candidateId: string;
+    signal: "up" | "down";
+  }) {
+    try {
+      await addDoc(collection(db, "posts", args.postId, "votes"), {
+        candidateId: args.candidateId,
+        signal: args.signal,
+        userId: auth.currentUser?.uid ?? null,
+        createdAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("save vote failed:", e);
+      alert("Could not save vote.");
+    }
+  }
+
+  async function handleReply(args: { postId: string; target: string; text: string }) {
+    try {
+      await addDoc(collection(db, "posts", args.postId, "replies"), {
+        text: args.text,
+        target: args.target, // "original" or lens key
+        authorId: auth.currentUser?.uid ?? null,
+        createdAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("save reply failed:", e);
+      alert("Could not post reply.");
+    }
+  }
+
+  const hasPosts = posts.length > 0;
 
   return (
     <main className="min-h-screen" style={{ background: pageBg, color: pageText }}>
@@ -185,7 +127,7 @@ export default function HomePage() {
             </label>
             <select
               id="feed-filter"
-              className="rounded-xl border px-3 py-2 text-sm bg-white"
+              className="rounded-xl border px-3 py-2 text-sm bg-white text-black"
               value={filter}
               onChange={(e) => setFilter(e.target.value as FilterKind)}
             >
@@ -200,10 +142,10 @@ export default function HomePage() {
         </header>
 
         {/* Feed */}
-        {loading && <div className="text-gray-600 text-sm">Loading feed…</div>}
+        {loading && <div className="text-gray-700 text-sm">Loading feed…</div>}
 
         {!loading && !hasPosts && (
-          <div className="text-gray-600 text-sm">
+          <div className="text-gray-700 text-sm">
             No posts yet. Be the first to{" "}
             <Link href="/add" className="underline">
               add one
@@ -219,8 +161,20 @@ export default function HomePage() {
               post={post}
               apiBase={API_BASE}
               filter={filter}
-              onVote={makeOnVote(post.id)}
-              onReply={makeOnReply(post.id)}
+              onVote={({ key, value }) =>
+                handleVote({
+                  postId: post.id,
+                  candidateId: (key as string) ?? "original",
+                  signal: value,
+                })
+              }
+              onReply={({ key, text }) =>
+                handleReply({
+                  postId: post.id,
+                  target: (key as string) ?? "original",
+                  text,
+                })
+              }
             />
           ))}
         </div>

@@ -1,79 +1,62 @@
 // src/app/add/page.tsx
 "use client";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { db, auth, serverTimestamp } from "../firebase";
-import { addDoc, collection } from "firebase/firestore";
-import { signInAnonymously } from "firebase/auth";
+import { useRouter } from "next/navigation";
+import { db, auth } from "../firebase";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
 export default function AddPage() {
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const canSubmit = text.trim().length > 0 && !busy;
+  const [saving, setSaving] = useState(false);
+  const router = useRouter();
 
-  const ensureUser = async () => {
-    if (!auth.currentUser) {
-      await signInAnonymously(auth).catch((e) =>
-        console.error("anon sign-in failed:", e)
-      );
-    }
-    return auth.currentUser;
-  };
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canSubmit) return;
-
+  async function save() {
+    const originalText = text.trim();
+    if (!originalText) return;
+    setSaving(true);
     try {
-      setBusy(true);
-      const user = await ensureUser();
-      if (!user) throw new Error("no_user");
-
-      // Must exactly match the Firestore rules shape:
-      // { originalText, authorId, createdAt }
       await addDoc(collection(db, "posts"), {
-        originalText: text.trim(),
-        authorId: user.uid,
+        originalText,
+        authorId: auth.currentUser?.uid ?? null,
         createdAt: serverTimestamp(),
       });
-
-      setText("");
-      alert("Added!");
-    } catch (err) {
-      console.error("add failed", err);
+      router.push("/");
+    } catch (e) {
+      console.error("add post failed:", e);
       alert("Failed to add. Check console.");
-    } finally {
-      setBusy(false);
+      setSaving(false);
     }
-  };
+  }
 
   return (
-    <main className="max-w-3xl mx-auto p-4 md:p-6">
-      <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Add Flip</h1>
-        <Link href="/" className="underline text-sm">
-          Back to feed
-        </Link>
-      </header>
+    <main className="min-h-screen bg-[var(--bg,#e6f0ff)] text-[var(--text,#111)]">
+      <div className="max-w-3xl mx-auto p-4 md:p-6">
+        <header className="mb-6 flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Add Flip</h1>
+          <Link href="/" className="underline">
+            Back to feed
+          </Link>
+        </header>
 
-      <form onSubmit={onSubmit} className="space-y-3">
         <textarea
           className="w-full min-h-[140px] rounded-xl border p-3"
           placeholder="Paste the original post text…"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50"
-        >
-          {busy ? "Saving…" : "Save"}
-        </button>
-      </form>
+
+        <div className="mt-3">
+          <button
+            onClick={save}
+            disabled={saving || text.trim().length === 0}
+            className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
     </main>
   );
 }

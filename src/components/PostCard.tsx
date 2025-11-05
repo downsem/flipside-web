@@ -1,8 +1,8 @@
+// src/components/PostCard.tsx
 "use client";
 
 import React from "react";
 import SwipeDeck from "./SwipeDeck";
-
 import type { TimelineId } from "@/theme/timelines";
 import type { Flip, VoteArgs, ReplyArgs } from "./SwipeDeck";
 
@@ -22,13 +22,7 @@ type Props = {
   onReply?: (args: ReplyArgs) => void | Promise<void>;
 };
 
-export default function PostCard({
-  post,
-  apiBase,
-  filter,
-  onVote,
-  onReply,
-}: Props) {
+export default function PostCard({ post, apiBase, filter, onVote, onReply }: Props) {
   const initialFlips: Flip[] = [
     {
       flip_id: post.id,
@@ -38,12 +32,14 @@ export default function PostCard({
   ];
 
   return (
-    <SwipeDeck
-      initialFlips={initialFlips}
-      apiBase={apiBase}
-      filterPrompt={filter}
-      onVote={onVote}
-      onReply={onReply}
-    />
+    <div className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
+      <SwipeDeck
+        initialFlips={initialFlips}
+        apiBase={apiBase}
+        filterPrompt={filter}
+        onVote={onVote ?? (async () => {})}
+        onReply={onReply ?? (async () => {})}
+      />
+    </div>
   );
 }
