@@ -1,12 +1,11 @@
 // src/app/add/page.tsx
 "use client";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const dynamic = "force-dynamic"; // do not prerender; no revalidate export
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { db, auth, serverTimestamp } from "@/app/firebase";
-import { addDoc, collection } from "firebase/firestore";
+import { db, auth } from "../firebase";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
 export default function AddPage() {
   const [text, setText] = useState("");
@@ -22,7 +21,7 @@ export default function AddPage() {
       const authorId = user?.uid || "anon";
       await addDoc(collection(db, "posts"), {
         originalText: text.trim(),
-        filteredText: "",
+        filteredText: "", // legacy/optional
         authorId,
         createdAt: serverTimestamp(),
       });
@@ -40,7 +39,9 @@ export default function AddPage() {
     <main className="max-w-3xl mx-auto p-4 md:p-6">
       <header className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Add Flip</h1>
-        <Link href="/" className="underline text-sm">Back to feed</Link>
+        <Link href="/" className="underline text-sm">
+          Back to feed
+        </Link>
       </header>
 
       <form onSubmit={onSubmit} className="space-y-3">

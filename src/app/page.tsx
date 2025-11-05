@@ -1,7 +1,6 @@
 // src/app/page.tsx
 "use client";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const dynamic = "force-dynamic"; // do not prerender; no revalidate export
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
@@ -36,15 +35,8 @@ export default function HomePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const { setTimeline, theme } = useTheme();
-
-  // Local feed filter. "all" = original + all flips (no lens filter)
+  const { timelineId, setTimeline, theme } = useTheme();
   const [filter, setFilter] = useState<FilterKind>("all");
-
-  // Keep page theme automatically in sync with filter (no “Match theme” button)
-  useEffect(() => {
-    if (filter !== "all") setTimeline(filter);
-  }, [filter, setTimeline]);
 
   useEffect(() => {
     const q = query(
@@ -83,7 +75,6 @@ export default function HomePage() {
   return (
     <main className="min-h-screen" style={{ background: pageBg, color: pageText }}>
       <div className="max-w-3xl mx-auto p-4 md:p-6">
-        {/* Header */}
         <header className="mb-6 flex items-center justify-between gap-3">
           <h1 className="text-3xl font-bold">FlipSide</h1>
           <div className="flex items-center gap-2">
@@ -94,7 +85,6 @@ export default function HomePage() {
               Add Flip
             </Link>
 
-            {/* Filter */}
             <label htmlFor="feed-filter" className="sr-only">
               Filter flips
             </label>
@@ -111,10 +101,19 @@ export default function HomePage() {
                 </option>
               ))}
             </select>
+
+            {filter !== "all" && filter !== timelineId ? (
+              <button
+                className="text-xs underline"
+                onClick={() => setTimeline(filter as TimelineId)}
+                title="Match page theme to this lens"
+              >
+                Match theme
+              </button>
+            ) : null}
           </div>
         </header>
 
-        {/* Feed */}
         {loading && <div className="text-gray-600 text-sm">Loading feed…</div>}
 
         {!loading && !hasPosts && (
@@ -129,12 +128,7 @@ export default function HomePage() {
 
         <div className="space-y-6">
           {posts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              apiBase={API_BASE}
-              filter={filter}
-            />
+            <PostCard key={post.id} post={post} apiBase={API_BASE} filter={filter} />
           ))}
         </div>
       </div>
