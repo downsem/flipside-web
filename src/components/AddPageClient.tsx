@@ -1,37 +1,30 @@
-// src/app/add/page.client.tsx
+// src/components/AddPageClient.tsx
 "use client";
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { db, auth, serverTimestamp } from "@/app/firebase";
 import { addDoc, collection } from "firebase/firestore";
 
 export default function AddPageClient() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const router = useRouter();
-
   const canSubmit = text.trim().length > 0 && !busy;
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
-
     try {
       setBusy(true);
       const user = auth.currentUser;
       const authorId = user?.uid || "anon";
-
       await addDoc(collection(db, "posts"), {
         originalText: text.trim(),
         authorId,
         createdAt: serverTimestamp(),
       });
-
       setText("");
-      // go back to feed so the new post appears
-      router.push("/");
+      alert("Added!");
     } catch (err) {
       console.error("add failed", err);
       alert("Failed to add. Check console.");

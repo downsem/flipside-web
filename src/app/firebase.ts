@@ -20,7 +20,6 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const serverTimestamp = fsServerTimestamp;
 
-// keep an anon session at all times for writes
 onAuthStateChanged(auth, (u) => {
   if (!u) {
     signInAnonymously(auth).catch((err) => {

@@ -1,12 +1,13 @@
-// src/app/api/flip/route.ts
-export const runtime = "nodejs";          // ✅ valid: "edge" | "experimental-edge" | "nodejs"
-export const dynamic = "force-dynamic";   // do not prerender this route
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 
 type FlipRequest = {
-  original: string;   // original text to rewrite
-  lens?: string;      // optional lens/prompt key, e.g., "calm", "bridge", etc.
+  original: string;
+  // we accept either name, for resilience to older clients:
+  lens?: string;
+  prompt?: string;
 };
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -22,12 +23,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "missing_openai_key" }, { status: 500 });
     }
 
-    const lens = body.lens?.trim() || "default";
-    const systemPrompt = `You rewrite short social posts into specific "lenses" (a.k.a. timelines).
-- Keep meaning intact.
+    const lens = (body.lens ?? body.prompt ?? "default").toString().trim();
+    const systemPrompt = `You rewrite short social posts into specific "lenses".
+- Keep meaning.
 - Be concise (1–3 sentences).
 - Match the requested lens style.
-- If lens is "default" return a clean, readable version with neutral tone.`;
+- If lens is "default" return a clear neutral rewording.`;
 
     const userPrompt = `Lens: ${lens}\n---\n${body.original}`;
 
@@ -49,25 +50,23 @@ export async function POST(req: Request) {
     });
 
     if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
+      const text = await resp.text().catch(() => "");
       return NextResponse.json(
-        { ok: false, error: "openai_error", detail: detail.slice(0, 800) },
+        { ok: false, error: "openai_error", detail: text.slice(0, 800) },
         { status: 502 }
       );
     }
 
     const data = await resp.json();
     const text: string = data?.choices?.[0]?.message?.content?.trim() || "";
-
     return NextResponse.json({ ok: true, text });
-  } catch (err) {
-    console.error("flip route error:", err);
+  } catch (err: any) {
+    console.error("flip route error:", err?.message || err);
     return NextResponse.json({ ok: false, error: "server_error" }, { status: 500 });
   }
 }
 
 export async function OPTIONS() {
-  // CORS (loose for now; lock down later if needed)
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", "*");
   res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");

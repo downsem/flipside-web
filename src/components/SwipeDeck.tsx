@@ -1,4 +1,3 @@
-// src/components/SwipeDeck.tsx
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,13 +42,11 @@ export default function SwipeDeck({
   const [idx, setIdx] = useState(0);
   const [loadingLens, setLoadingLens] = useState<string | null>(null);
 
-  const current = flips[0]; // one flip with multiple candidates
+  const current = flips[0];
 
-  // Build the display stack depending on filter
   const displayCards = useMemo(() => {
     if (!current) return [];
     const originalCard = { key: "original" as const, text: current.original };
-
     if (filterPrompt === "all") {
       const ordered = ORDERED_LENSES
         .map((id) => {
@@ -61,11 +58,11 @@ export default function SwipeDeck({
     } else {
       const c = current.candidates.find((x) => x.candidate_id === filterPrompt);
       if (c) return [{ key: filterPrompt as TimelineId, text: c.text }];
-      return [originalCard]; // will show original while we generate
+      return [originalCard];
     }
   }, [current, filterPrompt]);
 
-  // If user switches to a lens that hasn't been generated yet, fetch it once
+  // Generate a lens once if missing
   const ensureLensGenerated = useCallback(async () => {
     if (!current) return;
     if (filterPrompt === "all") return;
@@ -77,47 +74,38 @@ export default function SwipeDeck({
       const res = await fetch("/api/flip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // IMPORTANT: our route expects "lens", not "prompt"
+        // 👇 send `lens` (route also accepts `prompt`, but this keeps us consistent)
         body: JSON.stringify({ original: current.original, lens: filterPrompt }),
       });
       const data = await res.json();
-      if (!data?.ok || !data?.text) throw new Error("bad_response");
+      if (!data?.ok || !data?.text) throw new Error(data?.error || "bad_response");
       setFlips((prev) => {
-        const next = [...prev];
-        next[0] = {
-          ...next[0],
+        const copy = [...prev];
+        copy[0] = {
+          ...copy[0],
           candidates: [
-            ...next[0].candidates,
+            ...copy[0].candidates,
             { candidate_id: filterPrompt, text: data.text as string },
           ],
         };
-        return next;
+        return copy;
       });
     } catch (err) {
       console.error("generate lens failed:", err);
+      alert("Could not generate this lens (API). Try another lens or reload.");
     } finally {
       setLoadingLens(null);
     }
   }, [current, filterPrompt]);
 
   useEffect(() => {
-    if (filterPrompt !== "all") {
-      void ensureLensGenerated();
-    }
-    setIdx(0); // reset index on filter change
+    if (filterPrompt !== "all") void ensureLensGenerated();
+    setIdx(0);
   }, [filterPrompt, ensureLensGenerated]);
 
-  // navigation
-  const canPrev = idx > 0;
-  const canNext = idx < Math.max(0, displayCards.length - 1);
-  const goNext = useCallback(() => {
-    setIdx((i) => Math.min(i + 1, Math.max(0, displayCards.length - 1)));
-  }, [displayCards.length]);
-  const goPrev = useCallback(() => {
-    setIdx((i) => Math.max(i - 1, 0));
-  }, []);
+  const goNext = () => setIdx((i) => Math.min(i + 1, Math.max(0, displayCards.length - 1)));
+  const goPrev = () => setIdx((i) => Math.max(i - 1, 0));
 
-  // keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") goNext();
@@ -125,9 +113,8 @@ export default function SwipeDeck({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goNext, goPrev]);
+  }, [displayCards.length]);
 
-  // touch
   const touchStartX = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -149,39 +136,22 @@ export default function SwipeDeck({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* Status bar */}
       <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
         <div className="flex items-center gap-2">
           <span>{filterPrompt === "all" ? "Default (All)" : `Lens: ${filterPrompt}`}</span>
           {loadingLens && <span>· generating…</span>}
         </div>
-        <div>
-          {displayCards.length > 1 ? `${idx + 1} / ${displayCards.length}` : "1 / 1"}
-        </div>
+        <div>{displayCards.length > 1 ? `${idx + 1} / ${displayCards.length}` : "1 / 1"}</div>
       </div>
 
-      {/* Card content */}
       <div className="min-h-[120px] whitespace-pre-wrap leading-relaxed">
         {active ? active.text : current.original}
       </div>
 
-      {/* Actions */}
       <div className="mt-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <button
-            className="rounded-lg border px-3 py-1 text-sm disabled:opacity-50"
-            onClick={goPrev}
-            disabled={!canPrev}
-          >
-            ◀ Prev
-          </button>
-          <button
-            className="rounded-lg border px-3 py-1 text-sm disabled:opacity-50"
-            onClick={goNext}
-            disabled={!canNext}
-          >
-            Next ▶
-          </button>
+          <button className="rounded-lg border px-3 py-1 text-sm" onClick={goPrev}>◀ Prev</button>
+          <button className="rounded-lg border px-3 py-1 text-sm" onClick={goNext}>Next ▶</button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -189,36 +159,21 @@ export default function SwipeDeck({
             className="rounded-lg border px-3 py-1 text-sm"
             onClick={() => {
               if (!active) return;
-              onVote?.({
-                index: idx,
-                key: (active.key as any) ?? "original",
-                value: "up",
-                text: active.text,
-              });
-              if (canNext) goNext();
+              onVote?.({ index: idx, key: (active.key as any) ?? "original", value: "up", text: active.text });
+              goNext();
             }}
-          >
-            👍
-          </button>
+          >👍</button>
           <button
             className="rounded-lg border px-3 py-1 text-sm"
             onClick={() => {
               if (!active) return;
-              onVote?.({
-                index: idx,
-                key: (active.key as any) ?? "original",
-                value: "down",
-                text: active.text,
-              });
-              if (canNext) goNext();
+              onVote?.({ index: idx, key: (active.key as any) ?? "original", value: "down", text: active.text });
+              goNext();
             }}
-          >
-            👎
-          </button>
+          >👎</button>
         </div>
       </div>
 
-      {/* Reply box */}
       <div className="mt-3 flex items-center gap-2">
         <input
           className="flex-1 rounded-lg border px-3 py-2 text-sm"

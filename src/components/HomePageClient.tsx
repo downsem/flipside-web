@@ -1,8 +1,9 @@
+// src/components/HomePageClient.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { db, auth } from "./firebase";
+import { db } from "@/app/firebase";
 import {
   collection,
   onSnapshot,
@@ -10,10 +11,9 @@ import {
   query,
   limit,
   Timestamp,
-  addDoc,
-  serverTimestamp,
 } from "firebase/firestore";
-import PostCard, { type FilterKind } from "@/components/PostCard";
+
+import PostCard from "@/components/PostCard";
 import { useTheme } from "@/context/ThemeContext";
 import { TIMELINES, type TimelineId } from "@/theme/timelines";
 
@@ -28,20 +28,26 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ||
   "https://flipside.fly.dev";
 
-export default function HomeClient() {
+// Page filter: "all" shows the original + generated flips (no lens filter)
+type FilterKind = "all" | TimelineId;
+
+export default function HomePageClient() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ThemeContext still controls the page theme
   const { timelineId, setTimeline, theme } = useTheme();
+
+  // Local feed filter (independent of theme)
   const [filter, setFilter] = useState<FilterKind>("all");
 
-  // keep theme in sync with filter automatically
   useEffect(() => {
-    if (filter !== "all") setTimeline(filter as TimelineId);
-  }, [filter, setTimeline]);
+    const q = query(
+      collection(db, "posts"),
+      orderBy("createdAt", "desc"),
+      limit(50)
+    );
 
-  useEffect(() => {
-    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(50));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -62,71 +68,36 @@ export default function HomeClient() {
         setLoading(false);
       }
     );
+
     return () => unsub();
   }, []);
 
-  const pageBg = theme?.colors?.bg ?? "#f1f5f9";
-  const pageText = theme?.colors?.text ?? "#111";
-
-  const onVote = async (args: {
-    index: number;
-    key: TimelineId | "original";
-    value: "up" | "down";
-    text: string;
-  }) => {
-    const p = posts[0];
-    if (!p) return;
-    try {
-      await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          flip_id: p.id,
-          candidate_id: args.key,
-          signal: args.value === "up" ? 1 : -1,
-        }),
-      });
-    } catch (e) {
-      console.error("feedback error:", e);
-      alert("Could not record vote.");
-    }
-  };
-
-  const onReply = async (args: {
-    index: number;
-    key: TimelineId | "original";
-    text: string;
-    flipText: string;
-  }) => {
-    const p = posts[0];
-    if (!p) return;
-    try {
-      // replies go under replies_original for now
-      await addDoc(collection(db, "posts", p.id, "replies_original"), {
-        text: args.text,
-        authorId: auth.currentUser?.uid || "anon",
-        createdAt: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error("reply error:", e);
-      alert("Could not post reply.");
-    }
-  };
-
   const hasPosts = posts.length > 0;
+
+  // Themed page background; cards themselves stay white for readability
+  const pageBg = theme?.colors?.bg ?? "#f8fafc";
+  const pageText = theme?.colors?.text ?? "#111";
 
   return (
     <main className="min-h-screen" style={{ background: pageBg, color: pageText }}>
       <div className="max-w-3xl mx-auto p-4 md:p-6">
+        {/* Header */}
         <header className="mb-6 flex items-center justify-between gap-3">
           <h1 className="text-3xl font-bold">FlipSide</h1>
 
           <div className="flex items-center gap-2">
-            <Link href="/add" className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800">
+            {/* Add Flip (left of filter) */}
+            <Link
+              href="/add"
+              className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800"
+            >
               Add Flip
             </Link>
 
-            <label htmlFor="feed-filter" className="sr-only">Filter flips</label>
+            {/* Lens filter */}
+            <label htmlFor="feed-filter" className="sr-only">
+              Filter flips
+            </label>
             <select
               id="feed-filter"
               className="rounded-xl border px-3 py-2 text-sm bg-white"
@@ -135,18 +106,35 @@ export default function HomeClient() {
             >
               <option value="all">Default (All)</option>
               {Object.values(TIMELINES).map((t) => (
-                <option key={t.id} value={t.id}>{t.label}</option>
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
               ))}
             </select>
+
+            {/* Optional: keep theme in sync with the chosen lens */}
+            {filter !== "all" && filter !== timelineId ? (
+              <button
+                className="text-xs underline"
+                onClick={() => setTimeline(filter as TimelineId)}
+                title="Match page theme to this lens"
+              >
+                Match theme
+              </button>
+            ) : null}
           </div>
         </header>
 
+        {/* Feed */}
         {loading && <div className="text-gray-600 text-sm">Loading feed…</div>}
 
         {!loading && !hasPosts && (
           <div className="text-gray-600 text-sm">
             No posts yet. Be the first to{" "}
-            <Link href="/add" className="underline">add one</Link>!
+            <Link href="/add" className="underline">
+              add one
+            </Link>
+            !
           </div>
         )}
 
@@ -156,9 +144,10 @@ export default function HomeClient() {
               key={post.id}
               post={post}
               apiBase={API_BASE}
+              // SwipeDeck/PostCard should respect this filter:
+              // - "all" => original + all flips
+              // - a TimelineId => only that lens’ flip(s)
               filter={filter}
-              onVote={onVote}
-              onReply={onReply}
             />
           ))}
         </div>

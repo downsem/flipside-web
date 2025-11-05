@@ -1,63 +1,45 @@
 // src/lib/db.ts
-import { db } from "@/app/firebase";
+import { db, serverTimestamp } from "@/app/firebase";
 import {
   collection,
   addDoc,
   setDoc,
   doc,
-  serverTimestamp, // ✅ import directly from Firestore
 } from "firebase/firestore";
 
-export type SavedFlip = {
-  id: string;
-  promptKind: string;
-  text: string;
-  order: number;
-};
-
-export async function saveFlipsBatch(
-  postId: string,
-  flips: Array<{ promptKind: string; text: string }>
-) {
-  const flipsCol = collection(db, "posts", postId, "flips");
-  const saved: SavedFlip[] = [];
-  let order = 0;
-  for (const f of flips) {
-    const ref = await addDoc(flipsCol, {
-      promptKind: f.promptKind,
-      text: f.text,
-      order,
-      createdAt: serverTimestamp(),
-    });
-    saved.push({ id: ref.id, promptKind: f.promptKind, text: f.text, order });
-    order += 1;
-  }
-  return saved;
-}
-
-export async function recordVote(
-  postId: string,
-  flipId: string,
-  userId: string,
-  value: "up" | "down"
-) {
-  const voteRef = doc(db, "posts", postId, "flips", flipId, "votes", userId);
-  await setDoc(voteRef, {
-    value,
+/** Votes are stored 1-per-user per lens under posts/{postId}/votes/{userId}_{lens} */
+export async function recordVote(params: {
+  postId: string;
+  userId: string;
+  lens: string;               // "original" | TimelineId
+  value: "up" | "down";
+  text: string;               // the text being voted on (for audit)
+}) {
+  const key = `${params.userId}_${params.lens}`;
+  const ref = doc(db, "posts", params.postId, "votes", key);
+  await setDoc(ref, {
+    value: params.value,
+    lens: params.lens,
+    text: params.text,
+    userId: params.userId,
     createdAt: serverTimestamp(),
   });
 }
 
-export async function addReply(
-  postId: string,
-  flipId: string,
-  userId: string,
-  text: string
-) {
-  const repliesCol = collection(db, "posts", postId, "flips", flipId, "replies");
-  await addDoc(repliesCol, {
-    userId,
-    text,
+/** Replies go to posts/{postId}/replies (flat list) */
+export async function addReply(params: {
+  postId: string;
+  userId: string;
+  lens: string;               // "original" | TimelineId
+  text: string;               // the reply content
+  flipText: string;           // the text being replied to (for audit)
+}) {
+  const col = collection(db, "posts", params.postId, "replies");
+  await addDoc(col, {
+    userId: params.userId,
+    lens: params.lens,
+    text: params.text,
+    flipText: params.flipText,
     createdAt: serverTimestamp(),
   });
 }

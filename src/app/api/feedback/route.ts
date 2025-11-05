@@ -4,12 +4,9 @@ import { NextResponse } from "next/server";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
     if (!body.flip_id || !body.candidate_id || typeof body.signal === "undefined") {
       return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
     }
-
-    // TODO: persist to DB/analytics instead of console
     console.log("📝 Feedback received:", body);
     return NextResponse.json({ ok: true });
   } catch (err) {
