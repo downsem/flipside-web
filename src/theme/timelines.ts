@@ -80,7 +80,7 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
     prompt:
       "Rewrite the user’s text with dry humor and sharp skepticism. Keep it concise, clever, and grounded in truth—never cruel, but knowingly ironic.",
     // Accessibility tuned: darker bg, softened neon accent, high-contrast text
-    colors: { bg: "#16181A", accent: "#B6FF66", text: "#F8FAFC", patternOpacity: 0.05 },
+    colors: { bg: "#111111", accent: "#B6FF66", text: "#F8FAFC", patternOpacity: 0.05 },
     assets: { shapeSvg: "/shapes/cynical.svg", pattern: "/patterns/cynical.svg" },
     motion: {
       enter: { opacity: 0, scale: 0.98 },
