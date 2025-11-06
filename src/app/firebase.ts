@@ -27,3 +27,15 @@ onAuthStateChanged(auth, (u) => {
     });
   }
 });
+// --- TEMP DEBUG (safe to leave; only available in browser) ---
+if (typeof window !== "undefined") {
+  (window as any).__flipside = {
+    config: {
+      projectId: firebaseConfig.projectId,
+      authDomain: firebaseConfig.authDomain,
+    },
+    get uid() {
+      return auth.currentUser?.uid ?? null;
+    },
+  };
+}
