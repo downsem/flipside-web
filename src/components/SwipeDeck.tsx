@@ -1,7 +1,6 @@
-// src/components/SwipeDeck.tsx
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { TimelineId } from "@/theme/timelines";
 
 export type Candidate = { candidate_id: string; text: string };
@@ -29,139 +28,55 @@ type Props = {
   onReply?: (args: ReplyArgs) => void | Promise<void>;
 };
 
-// fixed order for the deck
 const ORDERED_LENSES: TimelineId[] = ["calm", "bridge", "cynical", "opposite", "playful"];
-const ORDER_ALL: Array<TimelineId | "original"> = ["original", ...ORDERED_LENSES];
 
 export default function SwipeDeck({
   initialFlips,
-  apiBase,
+  apiBase,          // reserved (not used here)
   filterPrompt,
   onVote,
   onReply,
 }: Props) {
-  const [flips, setFlips] = useState<Flip[]>(initialFlips);
-  const [replyDraft, setReplyDraft] = useState("");
+  const [flips] = useState<Flip[]>(initialFlips); // single flip (deck)
   const [idx, setIdx] = useState(0);
-  const [loadingLens, setLoadingLens] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState("");
 
-  // prevent duplicate POSTs for the same lens during a session
-  const requested = useRef<Set<string>>(new Set());
+  const current = flips[0];
 
-  const current = flips[0]; // one flip per card stack
-
-  // Map candidates by id for quick lookup
-  const byId = useMemo(() => {
-    const m = new Map<string, string>();
-    if (current) {
-      for (const c of current.candidates) m.set(c.candidate_id, c.text);
-    }
-    return m;
-  }, [current]);
-
-  // Build deck data
+  // Build the display stack (never re-generates; shows what exists)
   const displayCards = useMemo(() => {
     if (!current) return [];
+    const originalCard = { key: "original" as const, text: current.original };
 
     if (filterPrompt === "all") {
-      // fixed 6 cards
-      return ORDER_ALL.map((k) => {
-        if (k === "original") {
-          return { key: "original" as const, text: current.original, hasText: true };
-        }
-        const t = byId.get(k);
-        return {
-          key: k,
-          text: t ?? "(Generating…)", // will kick off generation on first view
-          hasText: Boolean(t),
-        } as { key: TimelineId; text: string; hasText: boolean };
-      });
+      const ordered = ORDERED_LENSES
+        .map((id) => {
+          const c = current.candidates.find((x) => x.candidate_id === id);
+          return c ? ({ key: id, text: c.text } as const) : null;
+        })
+        .filter(Boolean) as Array<{ key: TimelineId; text: string }>;
+      // Original first, then whatever candidates exist (up to 5). No dupes, no regen.
+      return [originalCard, ...ordered];
+    } else {
+      const c = current.candidates.find((x) => x.candidate_id === filterPrompt);
+      return c ? [{ key: filterPrompt, text: c.text }] : [originalCard];
     }
+  }, [current, filterPrompt]);
 
-    // single-lens mode: single card
-    if (ORDERED_LENSES.includes(filterPrompt)) {
-      const t = byId.get(filterPrompt);
-      return [
-        {
-          key: filterPrompt,
-          text: t ?? "(Generating…)",
-          hasText: Boolean(t),
-        } as { key: TimelineId; text: string; hasText: boolean },
-      ];
-    }
-
-    // fallback: original only
-    return [{ key: "original" as const, text: current.original, hasText: true }];
-  }, [current, filterPrompt, byId]);
-
-  // Generate a specific lens once
-  const generateLens = useCallback(
-    async (lens: TimelineId) => {
-      if (!current) return;
-      if (byId.get(lens)) return; // already have text
-      if (requested.current.has(lens)) return; // already requested
-      requested.current.add(lens);
-
-      try {
-        setLoadingLens(lens);
-        const res = await fetch("/api/flip", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ original: current.original, lens }),
-        });
-        const data = await res.json();
-        if (!data?.ok || !data?.text) throw new Error("bad_response");
-        setFlips((prev) => {
-          const copy = [...prev];
-          copy[0] = {
-            ...copy[0],
-            candidates: [...copy[0].candidates, { candidate_id: lens, text: data.text as string }],
-          };
-          return copy;
-        });
-      } catch (err) {
-        console.error("generate lens failed:", err);
-        // allow retry by removing from requested on failure
-        requested.current.delete(lens);
-      } finally {
-        setLoadingLens(null);
-      }
-    },
-    [current, byId]
-  );
-
-  // Kick off generation logic:
-  // - In "all": when you land on a lens card that has no text, generate it once.
-  // - In single-lens: generate that lens if missing.
-  useEffect(() => {
-    if (!current) return;
-    if (filterPrompt === "all") {
-      const activeCard = displayCards[idx];
-      if (activeCard && activeCard.key !== "original" && !activeCard.hasText) {
-        void generateLens(activeCard.key as TimelineId);
-      }
-    } else if (ORDERED_LENSES.includes(filterPrompt)) {
-      // single lens mode
-      const t = byId.get(filterPrompt);
-      if (!t) void generateLens(filterPrompt);
-    }
-  }, [current, filterPrompt, idx, displayCards, generateLens, byId]);
-
-  // when filter changes, reset index and clear in-flight request memory
-  useEffect(() => {
-    setIdx(0);
-    requested.current.clear();
-  }, [filterPrompt]);
-
-  // navigation — wrap around
+  // Looping next/prev
   const goNext = () => {
-    const n = displayCards.length || 1;
-    setIdx((i) => ((i + 1) % n + n) % n);
+    if (displayCards.length === 0) return;
+    setIdx((i) => (i + 1) % displayCards.length);
   };
   const goPrev = () => {
-    const n = displayCards.length || 1;
-    setIdx((i) => ((i - 1) % n + n) % n);
+    if (displayCards.length === 0) return;
+    setIdx((i) => (i - 1 + displayCards.length) % displayCards.length);
   };
+
+  // Reset index when filter changes or deck changes
+  useEffect(() => {
+    setIdx(0);
+  }, [filterPrompt, displayCards.length]);
 
   // keyboard
   useEffect(() => {
@@ -171,7 +86,6 @@ export default function SwipeDeck({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayCards.length]);
 
   // touch
@@ -190,11 +104,6 @@ export default function SwipeDeck({
   const active = displayCards[idx] ?? null;
   if (!current) return null;
 
-  const canInteract =
-    !!active &&
-    (active as any).hasText !== false && // block when lens is still generating
-    !(loadingLens && active?.key === loadingLens);
-
   return (
     <div
       className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm"
@@ -205,10 +114,9 @@ export default function SwipeDeck({
       <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
         <div className="flex items-center gap-2">
           <span>{filterPrompt === "all" ? "Default (All)" : `Lens: ${filterPrompt}`}</span>
-          {loadingLens && <span>· generating…</span>}
         </div>
         <div>
-          {displayCards.length > 0 ? `${Math.min(idx + 1, displayCards.length)} / ${displayCards.length}` : "1 / 1"}
+          {displayCards.length > 0 ? `${idx + 1} / ${displayCards.length}` : "0 / 0"}
         </div>
       </div>
 
@@ -230,8 +138,7 @@ export default function SwipeDeck({
 
         <div className="flex items-center gap-2">
           <button
-            className="rounded-lg border px-3 py-1 text-sm disabled:opacity-50"
-            disabled={!canInteract}
+            className="rounded-lg border px-3 py-1 text-sm"
             onClick={() => {
               if (!active) return;
               onVote?.({
@@ -240,14 +147,12 @@ export default function SwipeDeck({
                 value: "up",
                 text: active.text,
               });
-              goNext();
             }}
           >
             👍
           </button>
           <button
-            className="rounded-lg border px-3 py-1 text-sm disabled:opacity-50"
-            disabled={!canInteract}
+            className="rounded-lg border px-3 py-1 text-sm"
             onClick={() => {
               if (!active) return;
               onVote?.({
@@ -256,7 +161,6 @@ export default function SwipeDeck({
                 value: "down",
                 text: active.text,
               });
-              goNext();
             }}
           >
             👎
@@ -274,7 +178,7 @@ export default function SwipeDeck({
         />
         <button
           className="rounded-lg bg-black text-white px-3 py-2 text-sm disabled:opacity-50"
-          disabled={!canInteract || replyDraft.trim().length === 0}
+          disabled={!active || replyDraft.trim().length === 0}
           onClick={() => {
             if (!active) return;
             onReply?.({

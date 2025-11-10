@@ -1,61 +1,138 @@
-// src/app/add/page.tsx
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 "use client";
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { db, auth } from "../firebase";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db, auth, serverTimestamp } from "../firebase";
+import {
+  addDoc,
+  collection,
+  doc,
+  setDoc,
+} from "firebase/firestore";
+import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import { TIMELINES } from "@/theme/timelines";
 
 export default function AddPage() {
   const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
-  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
 
-  async function save() {
-    const originalText = text.trim();
-    if (!originalText) return;
-    setSaving(true);
+  // Ensure anon user (safety if the firebase.ts listener hasn't fired yet)
+  React.useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (!u) signInAnonymously(auth).catch(() => {});
+    });
+    return () => unsub();
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!text.trim()) return;
+
+    setBusy(true);
+    setStatus("Posting…");
+
     try {
-      await addDoc(collection(db, "posts"), {
-        originalText,
-        authorId: auth.currentUser?.uid ?? null,
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error("no_auth_user");
+      }
+
+      // 1) Create the post
+      const postRef = await addDoc(collection(db, "posts"), {
+        originalText: text.trim(),
+        authorId: user.uid,
         createdAt: serverTimestamp(),
       });
-      router.push("/");
-    } catch (e) {
-      console.error("add post failed:", e);
-      alert("Failed to add. Check console.");
-      setSaving(false);
+
+      setStatus("Generating rewrites…");
+
+      // 2) Ask server to generate all 5 lens candidates
+      const resp = await fetch("/api/batch-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ original: text.trim() }),
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || !data?.ok) {
+        console.warn("batch-generate failed:", data);
+        // We still keep the original post; user can trigger generation later if needed
+      }
+
+      // 3) Write candidates we got back under /posts/{postId}/candidates/{lensId}
+      const candidates: Record<string, string> = data?.candidates ?? {};
+      const writes: Promise<unknown>[] = [];
+
+      Object.values(TIMELINES).forEach((t) => {
+        const lensId = t.id;
+        const txt = candidates[lensId];
+        if (!txt) return; // skip failed lens
+
+        const candRef = doc(db, `posts/${postRef.id}/candidates/${lensId}`);
+        writes.push(
+          setDoc(candRef, {
+            text: txt,
+            lens: lensId,
+            authorId: user.uid, // same author; rules check
+            createdAt: serverTimestamp(),
+          })
+        );
+      });
+
+      if (writes.length) {
+        await Promise.all(writes);
+      }
+
+      setStatus("Done!");
+      setText("");
+    } catch (err) {
+      console.error("add submit failed:", err);
+      setStatus("Something went wrong. Try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-[var(--bg,#e6f0ff)] text-[var(--text,#111)]">
-      <div className="max-w-3xl mx-auto p-4 md:p-6">
+    <main className="min-h-screen bg-white text-black">
+      <div className="mx-auto max-w-2xl p-4">
         <header className="mb-6 flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Add Flip</h1>
-          <Link href="/" className="underline">
+          <h1 className="text-2xl font-bold">Add Flip</h1>
+          <Link href="/" className="text-sm underline">
             Back to feed
           </Link>
         </header>
 
-        <textarea
-          className="w-full min-h-[140px] rounded-xl border p-3"
-          placeholder="Paste the original post text…"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <textarea
+            className="w-full rounded-xl border p-3"
+            rows={5}
+            placeholder="Write your flip…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            disabled={busy}
+          />
 
-        <div className="mt-3">
-          <button
-            onClick={save}
-            disabled={saving || text.trim().length === 0}
-            className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={busy || !text.trim()}
+              className="rounded-xl bg-black px-4 py-2 text-white disabled:opacity-50"
+            >
+              {busy ? "Posting…" : "Post Flip"}
+            </button>
+            {status && <span className="text-sm text-gray-600">{status}</span>}
+          </div>
+        </form>
+
+        <p className="mt-6 text-sm text-gray-500">
+          We’ll generate the 5 rewrites (calm, bridge, cynical, opposite, playful) right after you
+          post, so they’re ready when people view your flip.
+        </p>
       </div>
     </main>
   );
