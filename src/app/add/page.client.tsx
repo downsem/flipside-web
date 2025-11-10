@@ -3,65 +3,75 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { db, auth, serverTimestamp } from "@/app/firebase";
+import { db, auth, serverTimestamp } from "../firebase";
 import { addDoc, collection } from "firebase/firestore";
 
 export default function AddPageClient() {
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
 
-  const canSubmit = text.trim().length > 0 && !busy;
-
-  const onSubmit = async (e: React.FormEvent) => {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return;
+    setErr(null);
+    const body = text.trim();
+    if (!body) return;
 
     try {
-      setBusy(true);
-      const user = auth.currentUser;
-      const authorId = user?.uid || "anon";
-
+      setSaving(true);
+      const uid = auth.currentUser?.uid || "anon";
       await addDoc(collection(db, "posts"), {
-        originalText: text.trim(),
-        authorId,
+        originalText: body,
+        authorId: uid,
         createdAt: serverTimestamp(),
       });
-
+      setOk(true);
       setText("");
-      // go back to feed so the new post appears
-      router.push("/");
-    } catch (err) {
-      console.error("add failed", err);
-      alert("Failed to add. Check console.");
+    } catch (e: any) {
+      console.error(e);
+      setErr(e?.message || "Failed to save");
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
-  };
+  }
 
   return (
-    <main className="max-w-3xl mx-auto p-4 md:p-6">
-      <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Add Flip</h1>
-        <Link href="/" className="underline text-sm">Back to feed</Link>
-      </header>
+    <main className="min-h-screen bg-white text-gray-900">
+      <div className="max-w-2xl mx-auto p-4 md:p-6">
+        <header className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Add Flip</h1>
+          <Link href="/" className="text-sm underline">
+            ← Back to feed
+          </Link>
+        </header>
 
-      <form onSubmit={onSubmit} className="space-y-3">
-        <textarea
-          className="w-full min-h-[140px] rounded-xl border p-3"
-          placeholder="Paste the original post text…"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50"
-        >
-          {busy ? "Saving…" : "Save"}
-        </button>
-      </form>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <textarea
+            className="w-full rounded-xl border px-3 py-2"
+            rows={6}
+            placeholder="Write your flip (original post)…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={saving || text.trim().length === 0}
+              className="rounded-xl bg-black text-white px-4 py-2 text-sm disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Post"}
+            </button>
+            {ok && <span className="text-sm text-green-700">Saved!</span>}
+            {err && <span className="text-sm text-red-600">{err}</span>}
+          </div>
+        </form>
+
+        <p className="mt-6 text-sm text-gray-600">
+          Tip: You’re signed in anonymously so you can post right away. We only store your UID
+          for authorship (no personal info).
+        </p>
+      </div>
     </main>
   );
 }
