@@ -1,9 +1,12 @@
+// src/components/SwipeDeck.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { TimelineId } from "@/theme/timelines";
+import { db } from "@/app/firebase";
+import { collection, onSnapshot } from "firebase/firestore";
 
-export type Candidate = { candidate_id: string; text: string };
+export type Candidate = { candidate_id: TimelineId; text: string };
 export type Flip = { flip_id: string; original: string; candidates: Candidate[] };
 
 export type VoteArgs = {
@@ -21,8 +24,8 @@ export type ReplyArgs = {
 };
 
 type Props = {
-  initialFlips: Flip[];
-  apiBase: string;
+  initialFlips: Flip[];        // single flip for the card
+  apiBase: string;             // unused now, kept for prop compatibility
   filterPrompt: "all" | TimelineId;
   onVote?: (args: VoteArgs) => void | Promise<void>;
   onReply?: (args: ReplyArgs) => void | Promise<void>;
@@ -32,53 +35,67 @@ const ORDERED_LENSES: TimelineId[] = ["calm", "bridge", "cynical", "opposite", "
 
 export default function SwipeDeck({
   initialFlips,
-  apiBase,          // reserved (not used here)
+  apiBase,
   filterPrompt,
   onVote,
   onReply,
 }: Props) {
-  const [flips] = useState<Flip[]>(initialFlips); // single flip (deck)
-  const [idx, setIdx] = useState(0);
+  const [flips, setFlips] = useState<Flip[]>(initialFlips);
   const [replyDraft, setReplyDraft] = useState("");
+  const [idx, setIdx] = useState(0);
 
-  const current = flips[0];
+  const current = flips[0]; // one flip per PostCard
 
-  // Build the display stack (never re-generates; shows what exists)
+  // Live-subscribe to rewrites stored under Firestore
+  useEffect(() => {
+    if (!current?.flip_id) return;
+    const col = collection(db, "posts", current.flip_id, "rewrites");
+    const off = onSnapshot(col, (snap) => {
+      const candidates: Candidate[] = [];
+      snap.forEach((d) => {
+        const lens = d.id as TimelineId;
+        const text = (d.data() as any)?.text ?? "";
+        if (ORDERED_LENSES.includes(lens) && text) {
+          candidates.push({ candidate_id: lens, text });
+        }
+      });
+      // keep the original, replace candidates from Firestore
+      setFlips([{ ...current, candidates }]);
+    });
+    return () => off();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.flip_id]);
+
+  // Build the visible stack for this post
   const displayCards = useMemo(() => {
     if (!current) return [];
     const originalCard = { key: "original" as const, text: current.original };
 
+    const ordered = ORDERED_LENSES
+      .map((id) => current.candidates.find((c) => c.candidate_id === id))
+      .filter(Boolean)
+      .map((c) => ({ key: c!.candidate_id, text: c!.text })) as Array<{
+      key: TimelineId;
+      text: string;
+    }>;
+
     if (filterPrompt === "all") {
-      const ordered = ORDERED_LENSES
-        .map((id) => {
-          const c = current.candidates.find((x) => x.candidate_id === id);
-          return c ? ({ key: id, text: c.text } as const) : null;
-        })
-        .filter(Boolean) as Array<{ key: TimelineId; text: string }>;
-      // Original first, then whatever candidates exist (up to 5). No dupes, no regen.
       return [originalCard, ...ordered];
     } else {
       const c = current.candidates.find((x) => x.candidate_id === filterPrompt);
-      return c ? [{ key: filterPrompt, text: c.text }] : [originalCard];
+      return c ? [{ key: c.candidate_id, text: c.text }] : [originalCard];
     }
   }, [current, filterPrompt]);
 
-  // Looping next/prev
-  const goNext = () => {
-    if (displayCards.length === 0) return;
-    setIdx((i) => (i + 1) % displayCards.length);
-  };
-  const goPrev = () => {
-    if (displayCards.length === 0) return;
-    setIdx((i) => (i - 1 + displayCards.length) % displayCards.length);
-  };
+  // Next/Prev – loop within the stack
+  const goNext = () =>
+    setIdx((i) => (displayCards.length > 0 ? (i + 1) % displayCards.length : 0));
+  const goPrev = () =>
+    setIdx((i) =>
+      displayCards.length > 0 ? (i - 1 + displayCards.length) % displayCards.length : 0
+    );
 
-  // Reset index when filter changes or deck changes
-  useEffect(() => {
-    setIdx(0);
-  }, [filterPrompt, displayCards.length]);
-
-  // keyboard
+  // keyboard nav
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") goNext();
@@ -88,7 +105,7 @@ export default function SwipeDeck({
     return () => window.removeEventListener("keydown", onKey);
   }, [displayCards.length]);
 
-  // touch
+  // touch swipe
   const touchStartX = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -116,7 +133,7 @@ export default function SwipeDeck({
           <span>{filterPrompt === "all" ? "Default (All)" : `Lens: ${filterPrompt}`}</span>
         </div>
         <div>
-          {displayCards.length > 0 ? `${idx + 1} / ${displayCards.length}` : "0 / 0"}
+          {displayCards.length > 0 ? `${(idx + 1)} / ${displayCards.length}` : "1 / 1"}
         </div>
       </div>
 
@@ -147,6 +164,7 @@ export default function SwipeDeck({
                 value: "up",
                 text: active.text,
               });
+              goNext();
             }}
           >
             👍
@@ -161,6 +179,7 @@ export default function SwipeDeck({
                 value: "down",
                 text: active.text,
               });
+              goNext();
             }}
           >
             👎

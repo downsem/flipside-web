@@ -4,74 +4,106 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { db, auth, serverTimestamp } from "../firebase";
-import { addDoc, collection } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  setDoc,
+} from "firebase/firestore";
 
-export default function AddPageClient() {
+const LENSES = ["calm", "bridge", "cynical", "opposite", "playful"] as const;
+
+export default function AddFlipClient() {
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setErr(null);
-    const body = text.trim();
-    if (!body) return;
+  async function handleSave() {
+    const t = text.trim();
+    if (!t) return;
 
     try {
       setSaving(true);
-      const uid = auth.currentUser?.uid || "anon";
-      await addDoc(collection(db, "posts"), {
-        originalText: body,
-        authorId: uid,
+
+      // 1) Make sure we have an anon user
+      const user = auth.currentUser;
+      if (!user) {
+        alert("No auth session (even anonymous). Try reloading.");
+        setSaving(false);
+        return;
+      }
+
+      // 2) Create the post
+      const created = await addDoc(collection(db, "posts"), {
+        originalText: t,
+        authorId: user.uid,
         createdAt: serverTimestamp(),
       });
-      setOk(true);
-      setText("");
-    } catch (e: any) {
-      console.error(e);
-      setErr(e?.message || "Failed to save");
+
+      // 3) Call our API to generate 5 rewrites
+      const res = await fetch("/api/generate-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ original: t }),
+      });
+      const data = await res.json();
+      if (!data?.ok || !data?.results) {
+        console.error("generate-all failed:", data);
+        alert("Flip saved, but rewrites failed to generate.");
+      } else {
+        const results: Record<(typeof LENSES)[number], string> = data.results;
+
+        // 4) Save rewrites under posts/{postId}/rewrites/{lensId}
+        await Promise.all(
+          LENSES.map((lens) =>
+            setDoc(
+              doc(db, "posts", created.id, "rewrites", lens),
+              { lens, text: results[lens] ?? "", createdAt: serverTimestamp() },
+              { merge: false }
+            )
+          )
+        );
+      }
+
+      // 5) Go back to the feed
+      window.location.href = "/";
+    } catch (err) {
+      console.error("add flip error", err);
+      alert("Failed to add flip.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-white text-gray-900">
-      <div className="max-w-2xl mx-auto p-4 md:p-6">
-        <header className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Add Flip</h1>
-          <Link href="/" className="text-sm underline">
-            ← Back to feed
-          </Link>
-        </header>
-
-        <form onSubmit={onSubmit} className="space-y-4">
-          <textarea
-            className="w-full rounded-xl border px-3 py-2"
-            rows={6}
-            placeholder="Write your flip (original post)…"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={saving || text.trim().length === 0}
-              className="rounded-xl bg-black text-white px-4 py-2 text-sm disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Post"}
-            </button>
-            {ok && <span className="text-sm text-green-700">Saved!</span>}
-            {err && <span className="text-sm text-red-600">{err}</span>}
-          </div>
-        </form>
-
-        <p className="mt-6 text-sm text-gray-600">
-          Tip: You’re signed in anonymously so you can post right away. We only store your UID
-          for authorship (no personal info).
-        </p>
+    <div className="mx-auto max-w-2xl p-4">
+      <div className="mb-4">
+        <Link href="/" className="text-sm underline">
+          Back to feed
+        </Link>
       </div>
-    </main>
+
+      <h1 className="mb-3 text-2xl font-semibold">Add Flip</h1>
+
+      <textarea
+        className="w-full rounded-xl border p-3"
+        rows={6}
+        placeholder="Paste the original post text…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          disabled={saving || text.trim().length === 0}
+          onClick={handleSave}
+          className="rounded-xl bg-black px-4 py-2 text-white disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save & Generate"}
+        </button>
+        <span className="text-xs text-gray-500">
+          This will generate Calm, Bridge, Cynical, Opposite, and Playful rewrites.
+        </span>
+      </div>
+    </div>
   );
 }
