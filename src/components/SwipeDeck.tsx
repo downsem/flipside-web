@@ -1,7 +1,7 @@
 // src/components/SwipeDeck.tsx
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TimelineId } from "@/theme/timelines";
 import { db } from "@/app/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
@@ -87,13 +87,16 @@ export default function SwipeDeck({
     }
   }, [current, filterPrompt]);
 
-  // Next/Prev – loop within the stack
-  const goNext = () =>
+  // Next/Prev – loop within the stack (memoize so we can safely add to deps)
+  const goNext = useCallback(() => {
     setIdx((i) => (displayCards.length > 0 ? (i + 1) % displayCards.length : 0));
-  const goPrev = () =>
+  }, [displayCards.length]);
+
+  const goPrev = useCallback(() => {
     setIdx((i) =>
       displayCards.length > 0 ? (i - 1 + displayCards.length) % displayCards.length : 0
     );
+  }, [displayCards.length]);
 
   // keyboard nav
   useEffect(() => {
@@ -103,7 +106,7 @@ export default function SwipeDeck({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [displayCards.length]);
+  }, [goNext, goPrev]);
 
   // touch swipe
   const touchStartX = useRef<number | null>(null);
@@ -133,7 +136,7 @@ export default function SwipeDeck({
           <span>{filterPrompt === "all" ? "Default (All)" : `Lens: ${filterPrompt}`}</span>
         </div>
         <div>
-          {displayCards.length > 0 ? `${(idx + 1)} / ${displayCards.length}` : "1 / 1"}
+          {displayCards.length > 0 ? `${idx + 1} / ${displayCards.length}` : "1 / 1"}
         </div>
       </div>
 
