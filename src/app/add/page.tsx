@@ -1,10 +1,10 @@
-// src/app/add/page.tsx
-export const dynamic = "force-dynamic";  // ✅ server-only export OK here
-export const revalidate = 0;             // ✅ server-only export OK here
+// Server Component wrapper for the Add page.
+// Do NOT put "use client" in this file.
 
-import AddPageClient from "./page.client";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
+import AddClient from "./page.client"; // <- your client file for /add
 export default function AddPage() {
-  // Pure server wrapper. No "use client" here.
-  return <AddPageClient />;
+  return <AddClient />;
 }
