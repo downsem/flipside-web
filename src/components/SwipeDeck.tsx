@@ -24,8 +24,8 @@ export type ReplyArgs = {
 };
 
 type Props = {
-  initialFlips: Flip[];        // single flip for the card
-  apiBase: string;             // unused now, kept for prop compatibility
+  initialFlips: Flip[];
+  apiBase: string;
   filterPrompt: "all" | TimelineId;
   onVote?: (args: VoteArgs) => void | Promise<void>;
   onReply?: (args: ReplyArgs) => void | Promise<void>;
@@ -44,9 +44,9 @@ export default function SwipeDeck({
   const [replyDraft, setReplyDraft] = useState("");
   const [idx, setIdx] = useState(0);
 
-  const current = flips[0]; // one flip per PostCard
+  const current = flips[0];
 
-  // Live-subscribe to rewrites stored under Firestore
+  // Subscribe to rewrites in Firestore for this post
   useEffect(() => {
     if (!current?.flip_id) return;
     const col = collection(db, "posts", current.flip_id, "rewrites");
@@ -59,14 +59,13 @@ export default function SwipeDeck({
           candidates.push({ candidate_id: lens, text });
         }
       });
-      // keep the original, replace candidates from Firestore
       setFlips([{ ...current, candidates }]);
     });
     return () => off();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.flip_id]);
 
-  // Build the visible stack for this post
+  // Build visible stack
   const displayCards = useMemo(() => {
     if (!current) return [];
     const originalCard = { key: "original" as const, text: current.original };
@@ -75,19 +74,16 @@ export default function SwipeDeck({
       .map((id) => current.candidates.find((c) => c.candidate_id === id))
       .filter(Boolean)
       .map((c) => ({ key: c!.candidate_id, text: c!.text })) as Array<{
-      key: TimelineId;
-      text: string;
-    }>;
+        key: TimelineId;
+        text: string;
+      }>;
 
-    if (filterPrompt === "all") {
-      return [originalCard, ...ordered];
-    } else {
-      const c = current.candidates.find((x) => x.candidate_id === filterPrompt);
-      return c ? [{ key: c.candidate_id, text: c.text }] : [originalCard];
-    }
+    if (filterPrompt === "all") return [originalCard, ...ordered];
+    const c = current.candidates.find((x) => x.candidate_id === filterPrompt);
+    return c ? [{ key: c.candidate_id, text: c.text }] : [originalCard];
   }, [current, filterPrompt]);
 
-  // Next/Prev – loop within the stack (memoize so we can safely add to deps)
+  // Looping next/prev
   const goNext = useCallback(() => {
     setIdx((i) => (displayCards.length > 0 ? (i + 1) % displayCards.length : 0));
   }, [displayCards.length]);
@@ -98,7 +94,7 @@ export default function SwipeDeck({
     );
   }, [displayCards.length]);
 
-  // keyboard nav
+  // Keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") goNext();
@@ -108,7 +104,7 @@ export default function SwipeDeck({
     return () => window.removeEventListener("keydown", onKey);
   }, [goNext, goPrev]);
 
-  // touch swipe
+  // Touch
   const touchStartX = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -130,22 +126,17 @@ export default function SwipeDeck({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* Status bar */}
       <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
         <div className="flex items-center gap-2">
           <span>{filterPrompt === "all" ? "Default (All)" : `Lens: ${filterPrompt}`}</span>
         </div>
-        <div>
-          {displayCards.length > 0 ? `${idx + 1} / ${displayCards.length}` : "1 / 1"}
-        </div>
+        <div>{displayCards.length > 0 ? `${idx + 1} / ${displayCards.length}` : "1 / 1"}</div>
       </div>
 
-      {/* Card content */}
       <div className="min-h-[120px] whitespace-pre-wrap leading-relaxed">
         {active ? active.text : current.original}
       </div>
 
-      {/* Actions */}
       <div className="mt-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <button className="rounded-lg border px-3 py-1 text-sm" onClick={goPrev}>
@@ -190,7 +181,6 @@ export default function SwipeDeck({
         </div>
       </div>
 
-      {/* Reply box */}
       <div className="mt-3 flex items-center gap-2">
         <input
           className="flex-1 rounded-lg border px-3 py-2 text-sm"

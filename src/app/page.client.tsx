@@ -27,17 +27,13 @@ type Post = {
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "https://flipside.fly.dev";
 
-// Page-level filter: "all" shows original + all rewrites
 export type FilterKind = "all" | TimelineId;
 
 export default function HomePageClient() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Theme controls (page colors still come from ThemeContext)
   const { timelineId, setTimeline, theme } = useTheme();
-
-  // Local feed filter (independent of theme selection)
   const [filter, setFilter] = useState<FilterKind>("all");
 
   useEffect(() => {
@@ -79,12 +75,10 @@ export default function HomePageClient() {
   return (
     <main className="min-h-screen" style={{ background: pageBg, color: pageText }}>
       <div className="max-w-3xl mx-auto p-4 md:p-6">
-        {/* Header */}
         <header className="mb-6 flex items-center justify-between gap-3">
           <h1 className="text-3xl font-bold">FlipSide</h1>
 
           <div className="flex items-center gap-2">
-            {/* Add Flip */}
             <Link
               href="/add"
               className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800"
@@ -92,7 +86,6 @@ export default function HomePageClient() {
               Add Flip
             </Link>
 
-            {/* Filter dropdown */}
             <label htmlFor="feed-filter" className="sr-only">
               Filter flips
             </label>
@@ -110,7 +103,6 @@ export default function HomePageClient() {
               ))}
             </select>
 
-            {/* Optional: keep theme in sync with chosen lens */}
             {filter !== "all" && filter !== timelineId ? (
               <button
                 className="text-xs underline"
@@ -123,7 +115,6 @@ export default function HomePageClient() {
           </div>
         </header>
 
-        {/* Feed */}
         {loading && <div className="text-gray-600 text-sm">Loading feed…</div>}
 
         {!loading && !hasPosts && (
