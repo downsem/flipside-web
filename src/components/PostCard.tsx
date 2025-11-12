@@ -3,11 +3,13 @@
 
 import React from "react";
 import SwipeDeck from "./SwipeDeck";
+
+// type-only imports
 import type { TimelineId } from "@/theme/timelines";
 import type { Flip, VoteArgs, ReplyArgs } from "./SwipeDeck";
 
 import { db, auth, serverTimestamp } from "@/app/firebase";
-import { doc, setDoc, collection, addDoc } from "firebase/firestore";
+import { collection, doc, setDoc, addDoc } from "firebase/firestore";
 
 type Post = {
   id: string;
@@ -21,50 +23,46 @@ type Props = {
   post: Post;
   apiBase: string;
   filter: FilterKind;
+  onVote?: (args: VoteArgs) => void | Promise<void>;
+  onReply?: (args: ReplyArgs) => void | Promise<void>;
 };
 
-export default function PostCard({ post, apiBase, filter }: Props) {
+export default function PostCard({
+  post,
+  apiBase,
+  filter,
+  onVote,
+  onReply,
+}: Props) {
+  // Construct the initial flip structure for SwipeDeck
   const initialFlips: Flip[] = [
-    { flip_id: post.id, original: post.originalText, candidates: [] },
+    {
+      flip_id: post.id,
+      original: post.originalText,
+      candidates: [],
+    },
   ];
 
-  async function handleVote({ key, value }: VoteArgs) {
-    try {
-      const user = auth.currentUser;
-      if (!user) throw new Error("no_auth");
-
-      // one vote doc per user per post
-      await setDoc(
-        doc(db, "posts", post.id, "votes", user.uid),
-        {
-          signal: value,                          // "up" | "down"
-          lens: key === "original" ? "original" : key,
-          createdAt: serverTimestamp(),
-        },
-        { merge: false }
-      );
-    } catch (err) {
-      console.error("save vote failed:", err);
-      alert("Could not save vote.");
+  // Default Firestore-backed handlers (used if parent doesn’t pass custom ones)
+  const defaultVote = async ({ value }: VoteArgs) => {
+    const u = auth.currentUser;
+    if (!u) {
+      alert("Not signed in; refresh to re-establish anon session.");
+      return;
     }
-  }
+    const ref = doc(db, "posts", post.id, "votes", u.uid);
+    await setDoc(ref, { signal: value, createdAt: serverTimestamp() }, { merge: true });
+  };
 
-  async function handleReply({ key, text }: ReplyArgs) {
-    try {
-      const user = auth.currentUser;
-      if (!user) throw new Error("no_auth");
-
-      await addDoc(collection(db, "posts", post.id, "replies"), {
-        text,
-        lens: key === "original" ? "original" : key,
-        authorId: user.uid,
-        createdAt: serverTimestamp(),
-      });
-    } catch (err) {
-      console.error("save reply failed:", err);
-      alert("Could not post reply.");
+  const defaultReply = async ({ text }: ReplyArgs) => {
+    const u = auth.currentUser;
+    if (!u) {
+      alert("Not signed in; refresh to re-establish anon session.");
+      return;
     }
-  }
+    const coll = collection(db, "posts", post.id, "replies");
+    await addDoc(coll, { text, authorId: u.uid, createdAt: serverTimestamp() });
+  };
 
   return (
     <div className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -72,8 +70,8 @@ export default function PostCard({ post, apiBase, filter }: Props) {
         initialFlips={initialFlips}
         apiBase={apiBase}
         filterPrompt={filter}
-        onVote={handleVote}
-        onReply={handleReply}
+        onVote={onVote ?? defaultVote}
+        onReply={onReply ?? defaultReply}
       />
     </div>
   );

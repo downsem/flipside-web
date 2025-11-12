@@ -1,12 +1,12 @@
 // src/components/SwipeDeck.tsx
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { TimelineId } from "@/theme/timelines";
 import { db } from "@/app/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 
-export type Candidate = { candidate_id: TimelineId; text: string };
+export type Candidate = { candidate_id: string; text: string };
 export type Flip = { flip_id: string; original: string; candidates: Candidate[] };
 
 export type VoteArgs = {
@@ -24,8 +24,8 @@ export type ReplyArgs = {
 };
 
 type Props = {
-  initialFlips: Flip[];
-  apiBase: string;
+  initialFlips: Flip[];              // expects one flip: [{ flip_id, original, candidates: [] }]
+  apiBase: string;                   // unused now (kept for future)
   filterPrompt: "all" | TimelineId;
   onVote?: (args: VoteArgs) => void | Promise<void>;
   onReply?: (args: ReplyArgs) => void | Promise<void>;
@@ -40,61 +40,60 @@ export default function SwipeDeck({
   onVote,
   onReply,
 }: Props) {
-  const [flips, setFlips] = useState<Flip[]>(initialFlips);
-  const [replyDraft, setReplyDraft] = useState("");
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [idx, setIdx] = useState(0);
+  const [replyDraft, setReplyDraft] = useState("");
 
-  const current = flips[0];
+  const flip = initialFlips[0] ?? null;
 
-  // Subscribe to rewrites in Firestore for this post
+  // Subscribe to this flip's candidates subcollection
   useEffect(() => {
-    if (!current?.flip_id) return;
-    const col = collection(db, "posts", current.flip_id, "rewrites");
-    const off = onSnapshot(col, (snap) => {
-      const candidates: Candidate[] = [];
-      snap.forEach((d) => {
-        const lens = d.id as TimelineId;
-        const text = (d.data() as any)?.text ?? "";
-        if (ORDERED_LENSES.includes(lens) && text) {
-          candidates.push({ candidate_id: lens, text });
-        }
-      });
-      setFlips([{ ...current, candidates }]);
-    });
-    return () => off();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.flip_id]);
+    if (!flip) return;
+    const q = query(
+      collection(db, "posts", flip.flip_id, "candidates"),
+      orderBy("createdAt", "asc")
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows: Candidate[] = snap.docs.map((d) => ({
+          candidate_id: d.id,
+          text: (d.data() as any)?.text ?? "",
+        }));
+        setCandidates(rows);
+      },
+      (err) => console.error("candidates onSnapshot error:", err)
+    );
+    return () => unsub();
+  }, [flip?.flip_id]);
 
-  // Build visible stack
+  // Build cards to display
   const displayCards = useMemo(() => {
-    if (!current) return [];
-    const originalCard = { key: "original" as const, text: current.original };
+    if (!flip) return [];
+    const base = [{ key: "original" as const, text: flip.original }];
 
     const ordered = ORDERED_LENSES
-      .map((id) => current.candidates.find((c) => c.candidate_id === id))
+      .map((lens) => candidates.find((c) => c.candidate_id === lens))
       .filter(Boolean)
-      .map((c) => ({ key: c!.candidate_id, text: c!.text })) as Array<{
-        key: TimelineId;
-        text: string;
-      }>;
+      .map((c) => ({ key: c!.candidate_id as TimelineId, text: c!.text }));
 
-    if (filterPrompt === "all") return [originalCard, ...ordered];
-    const c = current.candidates.find((x) => x.candidate_id === filterPrompt);
-    return c ? [{ key: c.candidate_id, text: c.text }] : [originalCard];
-  }, [current, filterPrompt]);
+    if (filterPrompt === "all") {
+      return [...base, ...ordered]; // original + any available lens
+    } else {
+      const found = candidates.find((c) => c.candidate_id === filterPrompt);
+      return found ? [{ key: filterPrompt, text: found.text }] : base;
+    }
+  }, [flip, candidates, filterPrompt]);
 
   // Looping next/prev
-  const goNext = useCallback(() => {
-    setIdx((i) => (displayCards.length > 0 ? (i + 1) % displayCards.length : 0));
-  }, [displayCards.length]);
-
-  const goPrev = useCallback(() => {
+  const goNext = () =>
+    setIdx((i) => (displayCards.length === 0 ? 0 : (i + 1) % displayCards.length));
+  const goPrev = () =>
     setIdx((i) =>
-      displayCards.length > 0 ? (i - 1 + displayCards.length) % displayCards.length : 0
+      displayCards.length === 0 ? 0 : (i - 1 + displayCards.length) % displayCards.length
     );
-  }, [displayCards.length]);
 
-  // Keyboard
+  // Keyboard arrows
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") goNext();
@@ -102,23 +101,28 @@ export default function SwipeDeck({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goNext, goPrev]);
+  }, [displayCards.length]);
 
-  // Touch
-  const touchStartX = useRef<number | null>(null);
+  // Touch swipe
+  const startX = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
+    startX.current = e.touches[0].clientX;
   };
   const onTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartX.current == null) return;
-    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    if (startX.current == null) return;
+    const dx = e.changedTouches[0].clientX - startX.current;
     if (dx < -30) goNext();
     if (dx > 30) goPrev();
-    touchStartX.current = null;
+    startX.current = null;
   };
 
+  useEffect(() => {
+    setIdx(0);
+  }, [filterPrompt, displayCards.length]);
+
   const active = displayCards[idx] ?? null;
-  if (!current) return null;
+
+  if (!flip) return null;
 
   return (
     <div
@@ -126,17 +130,26 @@ export default function SwipeDeck({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
+      {/* Status */}
       <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
         <div className="flex items-center gap-2">
           <span>{filterPrompt === "all" ? "Default (All)" : `Lens: ${filterPrompt}`}</span>
+          {/* If we’re missing some candidates and the user is on "all", hint generation */}
+          {filterPrompt === "all" && candidates.length < ORDERED_LENSES.length && (
+            <span>· generating…</span>
+          )}
         </div>
-        <div>{displayCards.length > 0 ? `${idx + 1} / ${displayCards.length}` : "1 / 1"}</div>
+        <div>
+          {displayCards.length > 0 ? `${idx + 1} / ${displayCards.length}` : "0 / 0"}
+        </div>
       </div>
 
+      {/* Content */}
       <div className="min-h-[120px] whitespace-pre-wrap leading-relaxed">
-        {active ? active.text : current.original}
+        {active ? active.text : flip.original}
       </div>
 
+      {/* Actions */}
       <div className="mt-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <button className="rounded-lg border px-3 py-1 text-sm" onClick={goPrev}>
@@ -158,7 +171,6 @@ export default function SwipeDeck({
                 value: "up",
                 text: active.text,
               });
-              goNext();
             }}
           >
             👍
@@ -173,7 +185,6 @@ export default function SwipeDeck({
                 value: "down",
                 text: active.text,
               });
-              goNext();
             }}
           >
             👎
@@ -181,6 +192,7 @@ export default function SwipeDeck({
         </div>
       </div>
 
+      {/* Reply */}
       <div className="mt-3 flex items-center gap-2">
         <input
           className="flex-1 rounded-lg border px-3 py-2 text-sm"
