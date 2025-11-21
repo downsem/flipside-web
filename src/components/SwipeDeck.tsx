@@ -9,7 +9,8 @@ import {
   orderBy,
   query,
 } from "firebase/firestore";
-import { TIMELINES, TIMELINE_LOOKUP, TimelineId } from "@/theme/timelines";
+import { TIMELINES } from "@/theme/timelines";
+import type { TimelineId } from "@/theme/timelines";
 import PostCard from "./PostCard";
 
 interface Post {
@@ -132,11 +133,6 @@ export default function SwipeDeck({ post }: SwipeDeckProps) {
       text: post.text,
     };
 
-  const timelineStyle =
-    currentCard.timelineId && TIMELINE_LOOKUP[currentCard.timelineId]
-      ? TIMELINE_LOOKUP[currentCard.timelineId]
-      : null;
-
   return (
     <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 text-xs text-gray-500">
@@ -157,8 +153,6 @@ export default function SwipeDeck({ post }: SwipeDeckProps) {
             transition={{ type: "spring", stiffness: 260, damping: 25 }}
           >
             <PostCard
-              // PostCard is assumed to accept these props; if it differs,
-              // paste its TypeScript error here and we’ll align the shape.
               postId={post.id}
               card={currentCard}
               isLoadingRewrites={isLoadingRewrites}

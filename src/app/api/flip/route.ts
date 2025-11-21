@@ -7,7 +7,8 @@ import {
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
-import { TIMELINES, TimelineId } from "@/theme/timelines";
+import { TIMELINES } from "@/theme/timelines";
+import type { TimelineId } from "@/theme/timelines";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
