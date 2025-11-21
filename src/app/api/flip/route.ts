@@ -1,75 +1,80 @@
+import { NextRequest, NextResponse } from "next/server";
+import OpenAI from "openai";
+import { db } from "../../firebase";
+import {
+  collection,
+  doc,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
+import { TIMELINES, TimelineId } from "@/theme/timelines";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-import { NextResponse } from "next/server";
-
-type FlipRequest = {
-  original: string;
-  // we accept either name, for resilience to older clients:
-  lens?: string;
-  prompt?: string;
-};
-
-const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as FlipRequest;
+    const body = await req.json();
+    const { postId, text } = body as { postId?: string; text?: string };
 
-    if (!body?.original || typeof body.original !== "string") {
-      return NextResponse.json({ ok: false, error: "missing_original" }, { status: 400 });
-    }
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ ok: false, error: "missing_openai_key" }, { status: 500 });
-    }
-
-    const lens = (body.lens ?? body.prompt ?? "default").toString().trim();
-    const systemPrompt = `You rewrite short social posts into specific "lenses".
-- Keep meaning.
-- Be concise (1–3 sentences).
-- Match the requested lens style.
-- If lens is "default" return a clear neutral rewording.`;
-
-    const userPrompt = `Lens: ${lens}\n---\n${body.original}`;
-
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 240,
-      }),
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
+    if (!postId || !text) {
       return NextResponse.json(
-        { ok: false, error: "openai_error", detail: text.slice(0, 800) },
-        { status: 502 }
+        { error: "Missing postId or text" },
+        { status: 400 }
       );
     }
 
-    const data = await resp.json();
-    const text: string = data?.choices?.[0]?.message?.content?.trim() || "";
-    return NextResponse.json({ ok: true, text });
-  } catch (err: any) {
-    console.error("flip route error:", err?.message || err);
-    return NextResponse.json({ ok: false, error: "server_error" }, { status: 500 });
-  }
-}
+    // Generate rewrites for all timelines in parallel
+    const completions = await Promise.all(
+      TIMELINES.map(async (timeline) => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4.1-mini",
+          messages: [
+            { role: "system", content: timeline.systemPrompt },
+            {
+              role: "user",
+              content: `Original post:\n\n${text}\n\nRewrite according to the instructions.`,
+            },
+          ],
+          temperature: 0.7,
+          max_tokens: 300,
+        });
 
-export async function OPTIONS() {
-  const res = new NextResponse(null, { status: 204 });
-  res.headers.set("Access-Control-Allow-Origin", "*");
-  res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  return res;
+        const content =
+          completion.choices[0]?.message?.content?.trim() ?? text;
+
+        return {
+          timelineId: timeline.id as TimelineId,
+          text: content,
+        };
+      })
+    );
+
+    const rewritesCol = collection(db, "posts", postId, "rewrites");
+
+    for (const item of completions) {
+      const rewriteRef = doc(rewritesCol, item.timelineId);
+      await setDoc(rewriteRef, {
+        id: item.timelineId,
+        postId,
+        timelineId: item.timelineId,
+        text: item.text,
+        createdAt: serverTimestamp(),
+        votes: 0,
+        replyCount: 0,
+      });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("Error in /api/flip:", err);
+    return NextResponse.json(
+      { error: "Failed to generate rewrites" },
+      { status: 500 }
+    );
+  }
 }

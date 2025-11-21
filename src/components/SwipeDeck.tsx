@@ -1,220 +1,196 @@
-// src/components/SwipeDeck.tsx
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { TimelineId } from "@/theme/timelines";
+import { useCallback, useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { db } from "@/app/firebase";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+} from "firebase/firestore";
+import { TIMELINES, TIMELINE_LOOKUP, TimelineId } from "@/theme/timelines";
+import PostCard from "./PostCard";
 
-export type Candidate = { candidate_id: string; text: string };
-export type Flip = { flip_id: string; original: string; candidates: Candidate[] };
-
-export type VoteArgs = {
-  index: number;
-  key: TimelineId | "original";
-  value: "up" | "down";
+interface Post {
+  id: string;
   text: string;
-};
+  createdAt?: any;
+  authorId?: string | null;
+}
 
-export type ReplyArgs = {
-  index: number;
-  key: TimelineId | "original";
+interface RewriteDoc {
+  id: string;
+  postId: string;
+  timelineId: TimelineId;
   text: string;
-  flipText: string;
-};
+  votes: number;
+  replyCount?: number;
+}
 
-type Props = {
-  initialFlips: Flip[];              // expects one flip: [{ flip_id, original, candidates: [] }]
-  apiBase: string;                   // unused now (kept for future)
-  filterPrompt: "all" | TimelineId;
-  onVote?: (args: VoteArgs) => void | Promise<void>;
-  onReply?: (args: ReplyArgs) => void | Promise<void>;
-};
+interface Card {
+  id: string;
+  type: "original" | "rewrite";
+  timelineId?: TimelineId;
+  label: string;
+  text: string;
+  votes?: number;
+  replyCount?: number;
+}
 
-const ORDERED_LENSES: TimelineId[] = ["calm", "bridge", "cynical", "opposite", "playful"];
+interface SwipeDeckProps {
+  post: Post;
+}
 
-export default function SwipeDeck({
-  initialFlips,
-  apiBase,
-  filterPrompt,
-  onVote,
-  onReply,
-}: Props) {
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [idx, setIdx] = useState(0);
-  const [replyDraft, setReplyDraft] = useState("");
+export default function SwipeDeck({ post }: SwipeDeckProps) {
+  const [rewrites, setRewrites] = useState<RewriteDoc[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [index, setIndex] = useState(0);
+  const [isLoadingRewrites, setIsLoadingRewrites] = useState(true);
 
-  const flip = initialFlips[0] ?? null;
-
-  // Subscribe to this flip's candidates subcollection
+  // Subscribe to rewrites for this post
   useEffect(() => {
-    if (!flip) return;
-    const q = query(
-      collection(db, "posts", flip.flip_id, "candidates"),
-      orderBy("createdAt", "asc")
-    );
+    const rewritesRef = collection(db, "posts", post.id, "rewrites");
+    const q = query(rewritesRef, orderBy("timelineId", "asc"));
+
     const unsub = onSnapshot(
       q,
-      (snap) => {
-        const rows: Candidate[] = snap.docs.map((d) => ({
-          candidate_id: d.id,
-          text: (d.data() as any)?.text ?? "",
-        }));
-        setCandidates(rows);
+      (snapshot) => {
+        const rows: RewriteDoc[] = snapshot.docs.map((doc) => {
+          const data = doc.data() as any;
+          return {
+            id: doc.id,
+            postId: data.postId ?? post.id,
+            timelineId: data.timelineId as TimelineId,
+            text: data.text ?? "",
+            votes: data.votes ?? 0,
+            replyCount: data.replyCount ?? 0,
+          };
+        });
+        setRewrites(rows);
+        setIsLoadingRewrites(false);
       },
-      (err) => console.error("candidates onSnapshot error:", err)
+      (err) => {
+        console.error("Error loading rewrites for post", post.id, err);
+        setIsLoadingRewrites(false);
+      }
     );
+
     return () => unsub();
-  }, [flip?.flip_id]);
+  }, [post.id]);
 
-  // Build cards to display
-  const displayCards = useMemo(() => {
-    if (!flip) return [];
-    const base = [{ key: "original" as const, text: flip.original }];
+  // Build the swipeable card list whenever rewrites change
+  useEffect(() => {
+    const list: Card[] = [];
 
-    const ordered = ORDERED_LENSES
-      .map((lens) => candidates.find((c) => c.candidate_id === lens))
-      .filter(Boolean)
-      .map((c) => ({ key: c!.candidate_id as TimelineId, text: c!.text }));
+    // Original first
+    list.push({
+      id: "original",
+      type: "original",
+      label: "Original",
+      text: post.text,
+    });
 
-    if (filterPrompt === "all") {
-      return [...base, ...ordered]; // original + any available lens
-    } else {
-      const found = candidates.find((c) => c.candidate_id === filterPrompt);
-      return found ? [{ key: filterPrompt, text: found.text }] : base;
-    }
-  }, [flip, candidates, filterPrompt]);
-
-  // Looping next/prev
-  const goNext = () =>
-    setIdx((i) => (displayCards.length === 0 ? 0 : (i + 1) % displayCards.length));
-  const goPrev = () =>
-    setIdx((i) =>
-      displayCards.length === 0 ? 0 : (i - 1 + displayCards.length) % displayCards.length
+    const rewriteMap = new Map(
+      rewrites.map((rw) => [rw.timelineId, rw])
     );
 
-  // Keyboard arrows
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") goNext();
-      if (e.key === "ArrowLeft") goPrev();
+    // Then rewrites in consistent timeline order
+    for (const t of TIMELINES) {
+      const rw = rewriteMap.get(t.id);
+      if (!rw) continue;
+      list.push({
+        id: rw.id,
+        type: "rewrite",
+        timelineId: rw.timelineId,
+        label: t.label,
+        text: rw.text,
+        votes: rw.votes,
+        replyCount: rw.replyCount,
+      });
+    }
+
+    setCards(list);
+    setIndex(0); // reset to original when cards update
+  }, [rewrites, post.text]);
+
+  const totalCards = cards.length || 1;
+
+  const goNext = useCallback(() => {
+    setIndex((prev) => Math.min(prev + 1, totalCards - 1));
+  }, [totalCards]);
+
+  const goPrev = useCallback(() => {
+    setIndex((prev) => Math.max(prev - 1, 0));
+  }, []);
+
+  const currentCard: Card =
+    cards[index] ?? {
+      id: "original",
+      type: "original",
+      label: "Original",
+      text: post.text,
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [displayCards.length]);
 
-  // Touch swipe
-  const startX = useRef<number | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => {
-    startX.current = e.touches[0].clientX;
-  };
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (startX.current == null) return;
-    const dx = e.changedTouches[0].clientX - startX.current;
-    if (dx < -30) goNext();
-    if (dx > 30) goPrev();
-    startX.current = null;
-  };
-
-  useEffect(() => {
-    setIdx(0);
-  }, [filterPrompt, displayCards.length]);
-
-  const active = displayCards[idx] ?? null;
-
-  if (!flip) return null;
+  const timelineStyle =
+    currentCard.timelineId && TIMELINE_LOOKUP[currentCard.timelineId]
+      ? TIMELINE_LOOKUP[currentCard.timelineId]
+      : null;
 
   return (
-    <div
-      className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm"
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-    >
-      {/* Status */}
-      <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
-        <div className="flex items-center gap-2">
-          <span>{filterPrompt === "all" ? "Default (All)" : `Lens: ${filterPrompt}`}</span>
-          {/* If we’re missing some candidates and the user is on "all", hint generation */}
-          {filterPrompt === "all" && candidates.length < ORDERED_LENSES.length && (
-            <span>· generating…</span>
-          )}
-        </div>
-        <div>
-          {displayCards.length > 0 ? `${idx + 1} / ${displayCards.length}` : "0 / 0"}
-        </div>
+    <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 text-xs text-gray-500">
+        <span>Flip</span>
+        <span>
+          {index + 1}/{totalCards}
+        </span>
       </div>
 
-      {/* Content */}
-      <div className="min-h-[120px] whitespace-pre-wrap leading-relaxed">
-        {active ? active.text : flip.original}
-      </div>
-
-      {/* Actions */}
-      <div className="mt-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <button className="rounded-lg border px-3 py-1 text-sm" onClick={goPrev}>
-            ◀ Prev
-          </button>
-          <button className="rounded-lg border px-3 py-1 text-sm" onClick={goNext}>
-            Next ▶
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            className="rounded-lg border px-3 py-1 text-sm"
-            onClick={() => {
-              if (!active) return;
-              onVote?.({
-                index: idx,
-                key: (active.key as any) ?? "original",
-                value: "up",
-                text: active.text,
-              });
-            }}
+      <div className="relative min-h-[180px]">
+        <AnimatePresence initial={false} custom={index}>
+          <motion.div
+            key={currentCard.id}
+            className="p-4"
+            initial={{ x: 40, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -40, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 260, damping: 25 }}
           >
-            👍
-          </button>
-          <button
-            className="rounded-lg border px-3 py-1 text-sm"
-            onClick={() => {
-              if (!active) return;
-              onVote?.({
-                index: idx,
-                key: (active.key as any) ?? "original",
-                value: "down",
-                text: active.text,
-              });
-            }}
-          >
-            👎
-          </button>
-        </div>
+            <PostCard
+              // PostCard is assumed to accept these props; if it differs,
+              // paste its TypeScript error here and we’ll align the shape.
+              postId={post.id}
+              card={currentCard}
+              isLoadingRewrites={isLoadingRewrites}
+            />
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      {/* Reply */}
-      <div className="mt-3 flex items-center gap-2">
-        <input
-          className="flex-1 rounded-lg border px-3 py-2 text-sm"
-          placeholder="Reply…"
-          value={replyDraft}
-          onChange={(e) => setReplyDraft(e.target.value)}
-        />
+      <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 text-xs">
         <button
-          className="rounded-lg bg-black text-white px-3 py-2 text-sm disabled:opacity-50"
-          disabled={!active || replyDraft.trim().length === 0}
-          onClick={() => {
-            if (!active) return;
-            onReply?.({
-              index: idx,
-              key: (active.key as any) ?? "original",
-              text: replyDraft.trim(),
-              flipText: active.text,
-            });
-            setReplyDraft("");
-          }}
+          onClick={goPrev}
+          disabled={index === 0}
+          className="rounded-full border border-gray-300 px-3 py-1 disabled:opacity-50"
         >
-          Send
+          Prev
+        </button>
+        <div className="flex items-center gap-1 text-gray-400 text-[10px]">
+          {cards.map((card, i) => (
+            <div
+              key={card.id}
+              className={`h-1.5 w-1.5 rounded-full ${
+                i === index ? "bg-gray-700" : "bg-gray-300"
+              }`}
+            />
+          ))}
+        </div>
+        <button
+          onClick={goNext}
+          disabled={index >= totalCards - 1}
+          className="rounded-full border border-gray-300 px-3 py-1 disabled:opacity-50"
+        >
+          Next
         </button>
       </div>
     </div>

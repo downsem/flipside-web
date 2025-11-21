@@ -1,21 +1,24 @@
-// src/app/add/page.tsx
 "use client";
 
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { db, auth, serverTimestamp } from "../firebase";
-import {
-  addDoc,
-  collection,
-  doc,
-  setDoc,
-} from "firebase/firestore";
+import { addDoc, collection } from "firebase/firestore";
+import { signInAnonymously } from "firebase/auth";
 
 export default function AddPage() {
+  const router = useRouter();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+
+  async function ensureAnonAuth() {
+    if (!auth.currentUser) {
+      await signInAnonymously(auth);
+    }
+    return auth.currentUser?.uid ?? null;
+  }
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,80 +26,70 @@ export default function AddPage() {
 
     try {
       setBusy(true);
-      const user = auth.currentUser;
-      if (!user) {
-        alert("Not signed in (anon). Please refresh and try again.");
-        setBusy(false);
-        return;
-      }
+      setError(null);
 
-      // 1) Create the post immediately
-      const ref = await addDoc(collection(db, "posts"), {
-        originalText: text.trim(),
-        authorId: user.uid,
+      const userId = await ensureAnonAuth();
+
+      // Create the post
+      const postsRef = collection(db, "posts");
+      const postDocRef = await addDoc(postsRef, {
+        text: text.trim(),
+        authorId: userId ?? null,
         createdAt: serverTimestamp(),
       });
 
-      // 2) Fire-and-forget: ask server to generate 5 rewrites, then write them as candidates
-      (async () => {
-        try {
-          const api = "/api/generate-on-create";
-          const resp = await fetch(api, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ original: text.trim() }),
-          });
-          const data = await resp.json();
-          if (data?.ok && data?.rewrites) {
-            const entries = Object.entries(data.rewrites) as Array<[string, string]>;
-            await Promise.all(
-              entries.map(([lens, rewrite]) =>
-                setDoc(
-                  doc(db, "posts", ref.id, "candidates", lens),
-                  { text: rewrite, createdAt: serverTimestamp() },
-                  { merge: true }
-                )
-              )
-            );
-          }
-        } catch (err) {
-          console.error("background generation failed:", err);
-        }
-      })();
+      // Generate all rewrites for this post
+      await fetch("/api/flip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          postId: postDocRef.id,
+          text: text.trim(),
+        }),
+      });
 
-      // 3) Bounce back to feed immediately
+      setText("");
       router.push("/");
     } catch (err) {
-      console.error("Add flip failed:", err);
-      alert("Failed to add. Try again.");
+      console.error("Error creating flip:", err);
+      setError("Something went wrong creating your flip. Please try again.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-white text-gray-900">
-      <div className="max-w-2xl mx-auto p-4 md:p-6">
-        <header className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Add Flip</h1>
-          <Link className="underline" href="/">Back</Link>
+    <main className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
+      <div className="w-full max-w-xl space-y-4">
+        <header className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">Create a Flip</h1>
+          <Link
+            href="/"
+            className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium hover:bg-gray-100"
+          >
+            Back to feed
+          </Link>
         </header>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <textarea
-            className="w-full rounded-xl border p-3"
-            rows={5}
-            placeholder="What's on your mind?"
+            className="w-full min-h-[140px] rounded-md border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="What do you want to say?"
             value={text}
             onChange={(e) => setText(e.target.value)}
             disabled={busy}
           />
+          {error && (
+            <p className="text-sm text-red-500">
+              {error}
+            </p>
+          )}
           <button
             type="submit"
-            className="rounded-2xl bg-black text-white px-4 py-2 disabled:opacity-50"
-            disabled={busy || text.trim().length === 0}
+            disabled={busy || !text.trim()}
+            className="inline-flex items-center justify-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
           >
-            {busy ? "Posting…" : "Post"}
+            {busy ? "Creating…" : "Post Flip"}
           </button>
         </form>
       </div>
