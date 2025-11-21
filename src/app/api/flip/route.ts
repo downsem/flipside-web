@@ -29,8 +29,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Use the array version of your timelines
-    const timelineList: TimelineSpec[] = TIMELINE_LIST;
+    // Use the array version of your timelines (readonly is fine)
+    const timelineList: readonly TimelineSpec[] = TIMELINE_LIST;
 
     // Generate rewrites for each timeline in parallel
     const completions = await Promise.all(
