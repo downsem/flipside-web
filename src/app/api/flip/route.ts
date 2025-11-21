@@ -8,7 +8,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { TIMELINES } from "@/theme/timelines";
-import type { TimelineId } from "@/theme/timelines";
+import type { TimelineId, TimelineSpec } from "@/theme/timelines";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -29,9 +29,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Convert TIMELINES record → array of values
+    const timelineList: TimelineSpec[] = Object.values(TIMELINES);
+
     // Generate rewrites for all timelines in parallel
     const completions = await Promise.all(
-      TIMELINES.map(async (timeline) => {
+      timelineList.map(async (timeline) => {
         const completion = await openai.chat.completions.create({
           model: "gpt-4.1-mini",
           messages: [
