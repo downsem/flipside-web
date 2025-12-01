@@ -1,17 +1,18 @@
+// src/app/add/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { db, auth, serverTimestamp } from "../firebase";
-import { addDoc, collection } from "firebase/firestore";
+import { collection, doc, setDoc } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
 
 export default function AddPage() {
-  const router = useRouter();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   async function ensureAnonAuth() {
     if (!auth.currentUser) {
@@ -20,79 +21,95 @@ export default function AddPage() {
     return auth.currentUser?.uid ?? null;
   }
 
-  const onSubmit = async (e: React.FormEvent) => {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim() || busy) return;
+
+    setBusy(true);
+    setError(null);
 
     try {
-      setBusy(true);
-      setError(null);
-
       const userId = await ensureAnonAuth();
 
-      // Create the post
-      const postsRef = collection(db, "posts");
-      const postDocRef = await addDoc(postsRef, {
+      // Create post document
+      const postsCol = collection(db, "posts");
+      const postRef = doc(postsCol);
+
+      await setDoc(postRef, {
+        id: postRef.id,
         text: text.trim(),
-        authorId: userId ?? null,
+        authorId: userId,
         createdAt: serverTimestamp(),
+        votes: 0,
+        replyCount: 0,
       });
 
-      // Generate all rewrites for this post
-      await fetch("/api/flip", {
+      // Trigger rewrite generation
+      const res = await fetch("/api/flip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          postId: postDocRef.id,
+          postId: postRef.id,
           text: text.trim(),
         }),
       });
 
-      setText("");
+      if (!res.ok) {
+        console.error("Error generating rewrites", await res.text());
+        setError("Something went wrong creating your flip. Please try again.");
+        setBusy(false);
+        return;
+      }
+
+      // Back to feed
       router.push("/");
     } catch (err) {
       console.error("Error creating flip:", err);
       setError("Something went wrong creating your flip. Please try again.");
-    } finally {
       setBusy(false);
     }
-  };
+  }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
+    <div className="min-h-screen flex justify-center px-4 py-6">
       <div className="w-full max-w-xl space-y-4">
+        {/* Header */}
         <header className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Create a Flip</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Add Flip</h1>
           <Link
             href="/"
-            className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium hover:bg-gray-100"
+            className="text-sm font-medium text-slate-800 underline"
           >
             Back to feed
           </Link>
         </header>
 
-        <form onSubmit={onSubmit} className="space-y-4">
-          <textarea
-            className="w-full min-h-[140px] rounded-md border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="What do you want to say?"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            disabled={busy}
-          />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="rounded-[28px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <textarea
+              className="h-40 w-full resize-none rounded-2xl border-0 bg-transparent px-1 py-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+              placeholder="Paste the original post text..."
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              disabled={busy}
+            />
+          </div>
+
           {error && (
-            <p className="text-sm text-red-500">
+            <p className="text-xs text-red-600">
               {error}
             </p>
           )}
+
           <button
             type="submit"
-            disabled={busy || !text.trim()}
-            className="inline-flex items-center justify-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            disabled={!text.trim() || busy}
+            className="inline-flex items-center justify-center rounded-2xl bg-slate-700 px-6 py-2 text-sm font-medium text-white shadow-sm disabled:opacity-50"
           >
-            {busy ? "Creating…" : "Post Flip"}
+            Post
           </button>
         </form>
       </div>
-    </main>
+    </div>
   );
 }

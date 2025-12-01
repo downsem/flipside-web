@@ -2,92 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Base doc sizing */
-html, body { height: 100%; }
-
-/* =========================
-   Theme variables (defaults)
-   These get overwritten live by ThemeProvider via JS.
-   ========================= */
-:root {
-  --bg: #ffffff;
-  --accent: #e5e7eb; /* Tailwind gray-200-ish as a safe default */
-  --text: #111827;   /* Tailwind gray-900-ish */
-  --pattern-opacity: 0.06;
-  --pattern-url: none;
-}
-
-/* Smooth color transitions when switching timelines */
-html, body {
-  transition: background-color 300ms ease, color 300ms ease;
-  background-color: var(--bg);
-  color: var(--text);
-}
-
-/* Optional subtle background pattern layer driven by --pattern-url */
+/* Flipside global styles */
 body {
-  background-image: var(--pattern-url);
-  background-size: 320px 320px;
-  background-repeat: repeat;
-  /* Blend the pattern so it's subtle; you can tweak these if needed */
-  background-blend-mode: multiply;
-  opacity: 1;
-}
-
-/* If you prefer separate control for pattern opacity, wrap pattern in a pseudo-element */
-@supports (background: paint(worklet)) or (background: var(--pattern-url)) {
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    background-image: var(--pattern-url);
-    background-repeat: repeat;
-    background-size: 320px 320px;
-    opacity: var(--pattern-opacity);
-    z-index: 0;
-  }
-}
-
-/* =========================
-   Small helpers used by SwipeDeck/TimelineSelector
-   ========================= */
-
-/* Surface card that sits over the patterned bg */
-.theme-surface {
-  position: relative;
-  z-index: 1; /* keep above the pattern layer */
-  background: #fff;
-  border: 1px solid rgba(0,0,0,0.05);
-  box-shadow:
-    0 10px 15px -3px rgba(0,0,0,0.08),
-    0 4px 6px -4px rgba(0,0,0,0.04);
-  border-radius: 0.75rem; /* rounded-xl */
-}
-
-/* Accent button that adapts to the active timeline */
-.button-accent {
-  background: var(--accent);
-  color: #111;
-  border: 1px solid rgba(0,0,0,0.08);
-  border-radius: 0.5rem; /* rounded-md */
-  transition: filter 150ms ease, transform 100ms ease;
-}
-.button-accent:hover { filter: brightness(0.97); }
-.button-accent:active { transform: translateY(1px) scale(0.995); }
-
-/* Swipe comfort helpers you already had */
-.touch-pan-y { touch-action: pan-y; }                  /* allow vertical scroll, block horizontal UA gestures */
-.touch-none  { touch-action: none; }                   /* block UA gesture handling entirely */
-.overscroll-contain { overscroll-behavior: contain; }  /* no rubber-banding from this container */
-.tap-transparent { -webkit-tap-highlight-color: transparent; } /* remove iOS tap flash */
-
-/* Respect reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  html, body, * {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+  margin: 0;
+  padding: 0;
+  background-color: #c7ebff; /* light blue like your screenshots */
+  color: #0f172a; /* slate-900-ish */
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", sans-serif;
 }

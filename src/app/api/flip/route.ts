@@ -1,24 +1,34 @@
+// src/app/api/flip/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { db } from "../../firebase";
-import {
-  collection,
-  doc,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
+import { db, serverTimestamp } from "../../firebase";
+import { collection, doc, setDoc } from "firebase/firestore";
 import { TIMELINE_LIST } from "@/theme/timelines";
-import type { TimelineId, TimelineSpec } from "@/theme/timelines";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import type { TimelineId } from "@/theme/timelines";
 
 export const runtime = "nodejs";
 export const revalidate = 0;
 
+// Ensure we have an API key up front
+const apiKey = process.env.OPENAI_API_KEY;
+
+if (!apiKey) {
+  console.error("OPENAI_API_KEY is not set in the environment.");
+}
+
+const openai = apiKey
+  ? new OpenAI({ apiKey })
+  : null;
+
 export async function POST(req: NextRequest) {
   try {
+    if (!openai) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY is missing on the server." },
+        { status: 500 }
+      );
+    }
+
     const body = await req.json();
     const { postId, text } = body as { postId?: string; text?: string };
 
@@ -29,19 +39,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Use the array version of your timelines (readonly is fine)
-    const timelineList: readonly TimelineSpec[] = TIMELINE_LIST;
-
-    // Generate rewrites for each timeline in parallel
     const completions = await Promise.all(
-      timelineList.map(async (timeline) => {
+      TIMELINE_LIST.map(async (timeline) => {
         const completion = await openai.chat.completions.create({
           model: "gpt-4.1-mini",
           messages: [
             { role: "system", content: timeline.prompt },
             {
               role: "user",
-              content: `Original post:\n\n${text}\n\nRewrite according to the instructions.`,
+              content: `Original post:\n\n${text}\n\nRewrite according to the timeline instructions.`,
             },
           ],
           temperature: 0.7,
@@ -74,10 +80,17 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error in /api/flip:", err);
+
+    // Try to surface a human-readable message to the browser
+    const message =
+      err?.response?.data?.error?.message ??
+      err?.message ??
+      "Failed to generate rewrites";
+
     return NextResponse.json(
-      { error: "Failed to generate rewrites" },
+      { error: message },
       { status: 500 }
     );
   }

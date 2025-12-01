@@ -1,25 +1,17 @@
 // src/app/layout.tsx
 import "./globals.css";
-import type { Metadata } from "next";
-import React from "react";
+import type { ReactNode } from "react";
 
-import { ThemeProvider } from "@/context/ThemeContext";
-import { FeedFilterProvider } from "@/context/FeedFilterContext"; // 👈 make sure this path matches your file
-
-export const metadata: Metadata = {
-  title: "FlipSide",
-  description: "See your post through different lenses",
+export const metadata = {
+  title: "Flipside",
+  description: "Flip your posts into multiple timelines.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <ThemeProvider>
-          <FeedFilterProvider>
-            {children}
-          </FeedFilterProvider>
-        </ThemeProvider>
+      <body className="min-h-screen bg-slate-50 text-slate-900">
+        <div className="mx-auto max-w-2xl px-4 py-6">{children}</div>
       </body>
     </html>
   );

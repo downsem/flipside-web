@@ -1,7 +1,8 @@
 // src/app/page.client.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { ChangeEvent } from "react";
 import Link from "next/link";
 import { db } from "./firebase";
 import {
@@ -9,135 +10,112 @@ import {
   onSnapshot,
   orderBy,
   query,
-  limit,
-  Timestamp,
 } from "firebase/firestore";
-
-import PostCard from "@/components/PostCard";
-import { useTheme } from "@/context/ThemeContext";
-import { TIMELINES, type TimelineId } from "@/theme/timelines";
+import SwipeDeck from "@/components/SwipeDeck";
+import { TIMELINE_LIST } from "@/theme/timelines";
+import type { TimelineId } from "@/theme/timelines";
 
 type Post = {
   id: string;
-  originalText: string;
-  authorId: string;
-  createdAt?: Timestamp | null;
+  text: string;
+  authorId?: string | null;
+  createdAt?: any;
+  votes?: number;
+  replyCount?: number;
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "https://flipside.fly.dev";
-
-export type FilterKind = "all" | TimelineId;
+type FilterValue = "all" | TimelineId;
 
 export default function HomePageClient() {
   const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const { timelineId, setTimeline, theme } = useTheme();
-  const [filter, setFilter] = useState<FilterKind>("all");
+  const [filter, setFilter] = useState<FilterValue>("all");
 
   useEffect(() => {
-    const q = query(
-      collection(db, "posts"),
-      orderBy("createdAt", "desc"),
-      limit(50)
-    );
-
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows: Post[] = snap.docs.map((d) => {
-          const data = d.data() as any;
-          return {
-            id: d.id,
-            originalText: data.originalText || "",
-            authorId: data.authorId || "",
-            createdAt: data.createdAt ?? null,
-          };
-        });
-        setPosts(rows);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Feed subscription failed:", err);
-        setLoading(false);
-      }
-    );
+    const postsRef = collection(db, "posts");
+    const q = query(postsRef, orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const rows: Post[] = snapshot.docs.map((doc) => {
+        const data = doc.data() as any;
+        return {
+          id: doc.id,
+          text: data.text ?? "",
+          authorId: data.authorId ?? null,
+          createdAt: data.createdAt ?? null,
+          votes: data.votes ?? 0,
+          replyCount: data.replyCount ?? 0,
+        };
+      });
+      setPosts(rows);
+    });
 
     return () => unsub();
   }, []);
 
-  const hasPosts = posts.length > 0;
+  function handleFilterChange(e: ChangeEvent<HTMLSelectElement>) {
+    const value = e.target.value as FilterValue;
+    setFilter(value);
+  }
 
-  const pageBg = theme?.colors?.bg ?? "#f8fafc";
-  const pageText = theme?.colors?.text ?? "#111";
+  // ✅ Only show posts that actually have text (no blank cards)
+  const nonEmptyPosts = posts.filter(
+    (p) => p.text && p.text.trim().length > 0
+  );
 
   return (
-    <main className="min-h-screen" style={{ background: pageBg, color: pageText }}>
-      <div className="max-w-3xl mx-auto p-4 md:p-6">
-        <header className="mb-6 flex items-center justify-between gap-3">
-          <h1 className="text-3xl font-bold">FlipSide</h1>
+    <div className="min-h-screen flex justify-center px-4 py-6">
+      <div className="w-full max-w-xl space-y-4">
+        {/* Header: FlipSide (left) | Choose your timeline + filter + Add Flip (right) */}
+        <header className="flex items-center justify-between gap-3">
+          <div className="text-2xl font-semibold tracking-tight">FlipSide</div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-slate-700">
+              Choose your timeline
+            </span>
+
+            <div className="relative inline-flex">
+              <select
+                value={filter}
+                onChange={handleFilterChange}
+                className="appearance-none rounded-full border border-slate-300 bg-white px-3 pr-7 py-1 text-xs text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              >
+                <option value="all">Default (All)</option>
+                {TIMELINE_LIST.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-slate-500">
+                ▾
+              </span>
+            </div>
+
             <Link
               href="/add"
-              className="rounded-2xl bg-black text-white px-4 py-2 text-sm hover:bg-gray-800"
+              className="inline-flex items-center justify-center rounded-2xl bg-black px-4 py-2 text-xs font-medium text-white shadow-sm"
             >
               Add Flip
             </Link>
-
-            <label htmlFor="feed-filter" className="sr-only">
-              Filter flips
-            </label>
-            <select
-              id="feed-filter"
-              className="rounded-xl border px-3 py-2 text-sm bg-white"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value as FilterKind)}
-            >
-              <option value="all">Default (All)</option>
-              {Object.values(TIMELINES).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-
-            {filter !== "all" && filter !== timelineId ? (
-              <button
-                className="text-xs underline"
-                onClick={() => setTimeline(filter as TimelineId)}
-                title="Match page theme to this lens"
-              >
-                Match theme
-              </button>
-            ) : null}
           </div>
         </header>
 
-        {loading && <div className="text-gray-600 text-sm">Loading feed…</div>}
-
-        {!loading && !hasPosts && (
-          <div className="text-gray-600 text-sm">
-            No posts yet. Be the first to{" "}
-            <Link href="/add" className="underline">
-              add one
-            </Link>
-            !
+        {nonEmptyPosts.length === 0 ? (
+          <p className="text-sm text-slate-600">
+            No flips yet. Paste something spicy and see how the lenses respond.
+          </p>
+        ) : (
+          <div className="space-y-4 pb-8">
+            {nonEmptyPosts.map((post) => (
+              <SwipeDeck
+                key={post.id}
+                post={post}
+                activeTimelineFilter={filter}
+              />
+            ))}
           </div>
         )}
-
-        <div className="space-y-6">
-          {posts.map((p) => (
-            <PostCard
-              key={p.id}
-              post={p}
-              apiBase={API_BASE}
-              filter={filter}
-            />
-          ))}
-        </div>
       </div>
-    </main>
+    </div>
   );
 }

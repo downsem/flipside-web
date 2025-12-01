@@ -1,35 +1,33 @@
+// src/components/SwipeDeck.tsx
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { db } from "@/app/firebase";
-import {
-  collection,
-  onSnapshot,
-  orderBy,
-  query,
-} from "firebase/firestore";
-import { TIMELINES } from "@/theme/timelines";
+import { collection, onSnapshot } from "firebase/firestore";
+import { TIMELINE_LIST } from "@/theme/timelines";
 import type { TimelineId } from "@/theme/timelines";
 import PostCard from "./PostCard";
 
-interface Post {
+type Post = {
   id: string;
   text: string;
-  createdAt?: any;
   authorId?: string | null;
-}
+  createdAt?: any;
+  votes?: number;
+  replyCount?: number;
+};
 
-interface RewriteDoc {
+type RewriteDoc = {
   id: string;
   postId: string;
   timelineId: TimelineId;
   text: string;
   votes: number;
-  replyCount?: number;
-}
+  replyCount: number;
+};
 
-interface Card {
+type Card = {
   id: string;
   type: "original" | "rewrite";
   timelineId?: TimelineId;
@@ -37,25 +35,29 @@ interface Card {
   text: string;
   votes?: number;
   replyCount?: number;
-}
+};
 
-interface SwipeDeckProps {
+type FilterValue = "all" | TimelineId;
+
+type SwipeDeckProps = {
   post: Post;
-}
+  activeTimelineFilter?: FilterValue;
+};
 
-export default function SwipeDeck({ post }: SwipeDeckProps) {
+export default function SwipeDeck({
+  post,
+  activeTimelineFilter = "all",
+}: SwipeDeckProps) {
   const [rewrites, setRewrites] = useState<RewriteDoc[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
   const [index, setIndex] = useState(0);
-  const [isLoadingRewrites, setIsLoadingRewrites] = useState(true);
+  const [loadingRewrites, setLoadingRewrites] = useState(true);
 
   // Subscribe to rewrites for this post
   useEffect(() => {
     const rewritesRef = collection(db, "posts", post.id, "rewrites");
-    const q = query(rewritesRef, orderBy("timelineId", "asc"));
-
     const unsub = onSnapshot(
-      q,
+      rewritesRef,
       (snapshot) => {
         const rows: RewriteDoc[] = snapshot.docs.map((doc) => {
           const data = doc.data() as any;
@@ -69,38 +71,38 @@ export default function SwipeDeck({ post }: SwipeDeckProps) {
           };
         });
         setRewrites(rows);
-        setIsLoadingRewrites(false);
+        setLoadingRewrites(false);
       },
       (err) => {
         console.error("Error loading rewrites for post", post.id, err);
-        setIsLoadingRewrites(false);
+        setLoadingRewrites(false);
       }
     );
 
     return () => unsub();
   }, [post.id]);
 
-  // Build the swipeable card list whenever rewrites change
+  // Build card list from original + rewrites, then apply filter
   useEffect(() => {
-    const list: Card[] = [];
-
-    // Original first
-    list.push({
+    // Original label = "Default (All)" to match your UI
+    const originalCard: Card = {
       id: "original",
       type: "original",
-      label: "Original",
+      label: "Default (All)",
       text: post.text,
-    });
+      votes: post.votes ?? 0,
+      replyCount: post.replyCount ?? 0,
+    };
 
-    const rewriteMap = new Map(
+    const rewriteMap = new Map<TimelineId, RewriteDoc>(
       rewrites.map((rw) => [rw.timelineId, rw])
     );
 
-    // Then rewrites in consistent timeline order
-    for (const t of TIMELINES) {
+    const rewriteCards: Card[] = [];
+    for (const t of TIMELINE_LIST) {
       const rw = rewriteMap.get(t.id);
       if (!rw) continue;
-      list.push({
+      rewriteCards.push({
         id: rw.id,
         type: "rewrite",
         timelineId: rw.timelineId,
@@ -111,9 +113,31 @@ export default function SwipeDeck({ post }: SwipeDeckProps) {
       });
     }
 
-    setCards(list);
-    setIndex(0); // reset to original when cards update
-  }, [rewrites, post.text]);
+    let filtered: Card[];
+
+    if (activeTimelineFilter === "all") {
+      // Default mode: Original + all rewrites
+      filtered = [originalCard, ...rewriteCards];
+    } else {
+      // Lens-only mode: only that lens's rewrite, no original
+      filtered = rewriteCards.filter(
+        (card) => card.timelineId === activeTimelineFilter
+      );
+    }
+
+    if (filtered.length === 0) {
+      filtered = [originalCard];
+    }
+
+    setCards(filtered);
+
+    setIndex((prev) => {
+      if (prev >= filtered.length) {
+        return filtered.length - 1 >= 0 ? filtered.length - 1 : 0;
+      }
+      return prev;
+    });
+  }, [rewrites, post.text, post.votes, post.replyCount, activeTimelineFilter]);
 
   const totalCards = cards.length || 1;
 
@@ -129,24 +153,19 @@ export default function SwipeDeck({ post }: SwipeDeckProps) {
     cards[index] ?? {
       id: "original",
       type: "original",
-      label: "Original",
+      label: "Default (All)",
       text: post.text,
+      votes: post.votes ?? 0,
+      replyCount: post.replyCount ?? 0,
     };
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 text-xs text-gray-500">
-        <span>Flip</span>
-        <span>
-          {index + 1}/{totalCards}
-        </span>
-      </div>
-
-      <div className="relative min-h-[180px]">
-        <AnimatePresence initial={false} custom={index}>
+    <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
+      <div className="relative min-h-[180px] px-4 pt-3 pb-2">
+        <AnimatePresence initial={false} mode="popLayout">
           <motion.div
-            key={currentCard.id}
-            className="p-4"
+            key={currentCard.id + index}
+            className="h-full"
             initial={{ x: 40, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -40, opacity: 0 }}
@@ -155,37 +174,31 @@ export default function SwipeDeck({ post }: SwipeDeckProps) {
             <PostCard
               postId={post.id}
               card={currentCard}
-              isLoadingRewrites={isLoadingRewrites}
+              isLoadingRewrites={loadingRewrites}
+              cardIndex={index + 1}
+              totalCards={totalCards}
             />
           </motion.div>
         </AnimatePresence>
       </div>
 
-      <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 text-xs">
-        <button
-          onClick={goPrev}
-          disabled={index === 0}
-          className="rounded-full border border-gray-300 px-3 py-1 disabled:opacity-50"
-        >
-          Prev
-        </button>
-        <div className="flex items-center gap-1 text-gray-400 text-[10px]">
-          {cards.map((card, i) => (
-            <div
-              key={card.id}
-              className={`h-1.5 w-1.5 rounded-full ${
-                i === index ? "bg-gray-700" : "bg-gray-300"
-              }`}
-            />
-          ))}
+      <div className="flex items-center justify-between px-4 pb-3 pt-1 text-xs">
+        <div className="flex gap-2">
+          <button
+            onClick={goPrev}
+            disabled={index === 0}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 disabled:opacity-40"
+          >
+            ◀ Prev
+          </button>
+          <button
+            onClick={goNext}
+            disabled={index >= totalCards - 1}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 disabled:opacity-40"
+          >
+            Next ▶
+          </button>
         </div>
-        <button
-          onClick={goNext}
-          disabled={index >= totalCards - 1}
-          className="rounded-full border border-gray-300 px-3 py-1 disabled:opacity-50"
-        >
-          Next
-        </button>
       </div>
     </div>
   );
