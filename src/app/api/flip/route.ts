@@ -1,36 +1,24 @@
-// src/app/api/flip/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { db, serverTimestamp } from "../../firebase";
-import { collection, doc, setDoc } from "firebase/firestore";
+import { db, serverTs } from "@/app/firebase";
+import {
+  collection,
+  doc,
+  setDoc,
+} from "firebase/firestore";
 import { TIMELINE_LIST } from "@/theme/timelines";
-import type { TimelineId } from "@/theme/timelines";
+import type { TimelineSpec } from "@/theme/timelines";
 
-export const runtime = "nodejs";
-export const revalidate = 0;
-
-// Ensure we have an API key up front
-const apiKey = process.env.OPENAI_API_KEY;
-
-if (!apiKey) {
-  console.error("OPENAI_API_KEY is not set in the environment.");
-}
-
-const openai = apiKey
-  ? new OpenAI({ apiKey })
-  : null;
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(req: NextRequest) {
   try {
-    if (!openai) {
-      return NextResponse.json(
-        { error: "OPENAI_API_KEY is missing on the server." },
-        { status: 500 }
-      );
-    }
-
-    const body = await req.json();
-    const { postId, text } = body as { postId?: string; text?: string };
+    const { postId, text } = (await req.json()) as {
+      postId?: string;
+      text?: string;
+    };
 
     if (!postId || !text) {
       return NextResponse.json(
@@ -39,58 +27,47 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const rewritesCol = collection(db, "posts", postId, "rewrites");
+
     const completions = await Promise.all(
-      TIMELINE_LIST.map(async (timeline) => {
+      TIMELINE_LIST.map(async (timeline: TimelineSpec) => {
         const completion = await openai.chat.completions.create({
           model: "gpt-4.1-mini",
           messages: [
-            { role: "system", content: timeline.prompt },
+            {
+              role: "system",
+              content: timeline.prompt,
+            },
             {
               role: "user",
-              content: `Original post:\n\n${text}\n\nRewrite according to the timeline instructions.`,
+              content: `Original post:\n\n${text}\n\nRewrite according to the instructions.`,
             },
           ],
           temperature: 0.7,
-          max_tokens: 300,
         });
 
         const content =
-          completion.choices[0]?.message?.content?.trim() ?? text;
+          completion.choices[0]?.message?.content?.trim() ||
+          "No rewrite generated.";
 
-        return {
-          timelineId: timeline.id as TimelineId,
+        const ref = doc(rewritesCol, timeline.id);
+
+        await setDoc(ref, {
+          timelineId: timeline.id,
           text: content,
-        };
+          createdAt: serverTs(),
+          votes: 0,
+        });
+
+        return { timelineId: timeline.id, text: content };
       })
     );
 
-    const rewritesCol = collection(db, "posts", postId, "rewrites");
-
-    for (const item of completions) {
-      const rewriteRef = doc(rewritesCol, item.timelineId);
-      await setDoc(rewriteRef, {
-        id: item.timelineId,
-        postId,
-        timelineId: item.timelineId,
-        text: item.text,
-        createdAt: serverTimestamp(),
-        votes: 0,
-        replyCount: 0,
-      });
-    }
-
-    return NextResponse.json({ ok: true });
-  } catch (err: any) {
+    return NextResponse.json({ ok: true, rewrites: completions });
+  } catch (err) {
     console.error("Error in /api/flip:", err);
-
-    // Try to surface a human-readable message to the browser
-    const message =
-      err?.response?.data?.error?.message ??
-      err?.message ??
-      "Failed to generate rewrites";
-
     return NextResponse.json(
-      { error: message },
+      { error: "Internal error generating rewrites" },
       { status: 500 }
     );
   }

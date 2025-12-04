@@ -1,204 +1,191 @@
-// src/components/SwipeDeck.tsx
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
+import { collection, onSnapshot, query } from "firebase/firestore";
 import { db } from "@/app/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import type { TimelineId, TimelineSpec } from "@/theme/timelines";
 import { TIMELINE_LIST } from "@/theme/timelines";
-import type { TimelineId } from "@/theme/timelines";
-import PostCard from "./PostCard";
 
-type Post = {
-  id: string;
-  text: string;
-  authorId?: string | null;
-  createdAt?: any;
-  votes?: number;
-  replyCount?: number;
-};
-
-type RewriteDoc = {
-  id: string;
-  postId: string;
-  timelineId: TimelineId;
-  text: string;
-  votes: number;
-  replyCount: number;
-};
-
-type Card = {
-  id: string;
-  type: "original" | "rewrite";
-  timelineId?: TimelineId;
+type FlipCard = {
+  id: "original" | TimelineId;
   label: string;
+  icon?: string;
   text: string;
-  votes?: number;
-  replyCount?: number;
 };
-
-type FilterValue = "all" | TimelineId;
 
 type SwipeDeckProps = {
-  post: Post;
-  activeTimelineFilter?: FilterValue;
+  post: any;
+  selectedTimeline: "all" | TimelineId;
+  onVote: (timelineId: "original" | TimelineId, value: number) => void;
+  onReply: (timelineId: "original" | TimelineId, text: string) => void;
 };
 
 export default function SwipeDeck({
   post,
-  activeTimelineFilter = "all",
+  selectedTimeline,
+  onVote,
+  onReply,
 }: SwipeDeckProps) {
-  const [rewrites, setRewrites] = useState<RewriteDoc[]>([]);
-  const [cards, setCards] = useState<Card[]>([]);
+  const [rewrites, setRewrites] = useState<Record<TimelineId, any>>({});
   const [index, setIndex] = useState(0);
-  const [loadingRewrites, setLoadingRewrites] = useState(true);
+  const [replyText, setReplyText] = useState("");
 
-  // Subscribe to rewrites for this post
   useEffect(() => {
     const rewritesRef = collection(db, "posts", post.id, "rewrites");
-    const unsub = onSnapshot(
-      rewritesRef,
-      (snapshot) => {
-        const rows: RewriteDoc[] = snapshot.docs.map((doc) => {
-          const data = doc.data() as any;
-          return {
-            id: doc.id,
-            postId: data.postId ?? post.id,
-            timelineId: data.timelineId as TimelineId,
-            text: data.text ?? "",
-            votes: data.votes ?? 0,
-            replyCount: data.replyCount ?? 0,
-          };
-        });
-        setRewrites(rows);
-        setLoadingRewrites(false);
-      },
-      (err) => {
-        console.error("Error loading rewrites for post", post.id, err);
-        setLoadingRewrites(false);
-      }
-    );
+    const q = query(rewritesRef);
+
+    const unsub = onSnapshot(q, (snap) => {
+      const map: Record<TimelineId, any> = {
+        calm: undefined as any,
+        bridge: undefined as any,
+        cynical: undefined as any,
+        opposite: undefined as any,
+        playful: undefined as any,
+      };
+      snap.forEach((doc) => {
+        const data = doc.data() as any;
+        const id = data.timelineId as TimelineId;
+        if (id) {
+          map[id] = { id, ...data };
+        }
+      });
+      setRewrites(map);
+    });
 
     return () => unsub();
   }, [post.id]);
 
-  // Build card list from original + rewrites, then apply filter
   useEffect(() => {
-    // Original label = "Default (All)" to match your UI
-    const originalCard: Card = {
-      id: "original",
-      type: "original",
-      label: "Default (All)",
-      text: post.text,
-      votes: post.votes ?? 0,
-      replyCount: post.replyCount ?? 0,
-    };
+    setIndex(0);
+  }, [selectedTimeline]);
 
-    const rewriteMap = new Map<TimelineId, RewriteDoc>(
-      rewrites.map((rw) => [rw.timelineId, rw])
-    );
+  const cards: FlipCard[] = useMemo(() => {
+    if (selectedTimeline === "all") {
+      const list: FlipCard[] = [
+        {
+          id: "original",
+          label: "Original",
+          text: post.text,
+        },
+      ];
 
-    const rewriteCards: Card[] = [];
-    for (const t of TIMELINE_LIST) {
-      const rw = rewriteMap.get(t.id);
-      if (!rw) continue;
-      rewriteCards.push({
-        id: rw.id,
-        type: "rewrite",
-        timelineId: rw.timelineId,
-        label: t.label,
-        text: rw.text,
-        votes: rw.votes,
-        replyCount: rw.replyCount,
+      TIMELINE_LIST.forEach((t: TimelineSpec) => {
+        const rw = rewrites[t.id];
+        list.push({
+          id: t.id,
+          label: t.label,
+          icon: t.icon,
+          text: rw?.text || "(Generating rewrite…)",
+        });
       });
-    }
 
-    let filtered: Card[];
-
-    if (activeTimelineFilter === "all") {
-      // Default mode: Original + all rewrites
-      filtered = [originalCard, ...rewriteCards];
+      return list;
     } else {
-      // Lens-only mode: only that lens's rewrite, no original
-      filtered = rewriteCards.filter(
-        (card) => card.timelineId === activeTimelineFilter
-      );
+      const t = TIMELINE_LIST.find((tl) => tl.id === selectedTimeline)!;
+      const rw = rewrites[t.id];
+      return [
+        {
+          id: t.id,
+          label: t.label,
+          icon: t.icon,
+          text: rw?.text || "(Generating rewrite…)",
+        },
+      ];
     }
+  }, [post.text, rewrites, selectedTimeline]);
 
-    if (filtered.length === 0) {
-      filtered = [originalCard];
-    }
+  const current = cards[index] ?? cards[0];
 
-    setCards(filtered);
+  function handlePrev() {
+    setIndex((prev) => (prev > 0 ? prev - 1 : prev));
+  }
 
-    setIndex((prev) => {
-      if (prev >= filtered.length) {
-        return filtered.length - 1 >= 0 ? filtered.length - 1 : 0;
-      }
-      return prev;
-    });
-  }, [rewrites, post.text, post.votes, post.replyCount, activeTimelineFilter]);
+  function handleNext() {
+    setIndex((prev) => (prev < cards.length - 1 ? prev + 1 : prev));
+  }
 
-  const totalCards = cards.length || 1;
-
-  const goNext = useCallback(() => {
-    setIndex((prev) => Math.min(prev + 1, totalCards - 1));
-  }, [totalCards]);
-
-  const goPrev = useCallback(() => {
-    setIndex((prev) => Math.max(prev - 1, 0));
-  }, []);
-
-  const currentCard: Card =
-    cards[index] ?? {
-      id: "original",
-      type: "original",
-      label: "Default (All)",
-      text: post.text,
-      votes: post.votes ?? 0,
-      replyCount: post.replyCount ?? 0,
-    };
+  async function handleReplySubmit() {
+    const trimmed = replyText.trim();
+    if (!trimmed) return;
+    await onReply(current.id, trimmed);
+    setReplyText("");
+  }
 
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
-      <div className="relative min-h-[180px] px-4 pt-3 pb-2">
-        <AnimatePresence initial={false} mode="popLayout">
-          <motion.div
-            key={currentCard.id + index}
-            className="h-full"
-            initial={{ x: 40, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -40, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 260, damping: 25 }}
-          >
-            <PostCard
-              postId={post.id}
-              card={currentCard}
-              isLoadingRewrites={loadingRewrites}
-              cardIndex={index + 1}
-              totalCards={totalCards}
-            />
-          </motion.div>
-        </AnimatePresence>
+    <div className="space-y-3">
+      {/* Card header with chip & simple pager */}
+      <div className="flex items-center justify-between mb-1">
+        <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
+          <span className="text-[11px] font-medium text-slate-700">
+            {current.icon && <span className="mr-1">{current.icon}</span>}
+            {current.label}
+          </span>
+        </div>
+        {cards.length > 1 && (
+          <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <button
+              type="button"
+              onClick={handlePrev}
+              disabled={index === 0}
+              className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
+            >
+              ‹
+            </button>
+            <span>
+              {index + 1}/{cards.length}
+            </span>
+            <button
+              type="button"
+              onClick={handleNext}
+              disabled={index === cards.length - 1}
+              className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
+            >
+              ›
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center justify-between px-4 pb-3 pt-1 text-xs">
-        <div className="flex gap-2">
+      {/* Text */}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-900 whitespace-pre-wrap">
+        {current.text}
+      </div>
+
+      {/* Actions: vote + reply */}
+      <div className="flex items-center justify-between text-[11px]">
+        <div className="flex items-center gap-2">
           <button
-            onClick={goPrev}
-            disabled={index === 0}
-            className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 disabled:opacity-40"
+            type="button"
+            onClick={() => onVote(current.id, 1)}
+            className="px-3 py-1 rounded-full bg-slate-900 text-white"
           >
-            ◀ Prev
+            👍
           </button>
           <button
-            onClick={goNext}
-            disabled={index >= totalCards - 1}
-            className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 disabled:opacity-40"
+            type="button"
+            onClick={() => onVote(current.id, -1)}
+            className="px-3 py-1 rounded-full border border-slate-300 text-slate-700"
           >
-            Next ▶
+            👎
           </button>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 text-[11px]">
+        <input
+          type="text"
+          value={replyText}
+          onChange={(e) => setReplyText(e.target.value)}
+          placeholder="Reply to this version…"
+          className="flex-1 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
+        />
+        <button
+          type="button"
+          onClick={handleReplySubmit}
+          className="px-3 py-2 rounded-full bg-slate-800 text-white text-[11px]"
+        >
+          Reply
+        </button>
       </div>
     </div>
   );

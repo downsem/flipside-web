@@ -1,10 +1,19 @@
-// src/app/firebase.ts
-import { initializeApp, getApps, getApp } from "firebase/app";
+"use client";
+
+import { initializeApp } from "firebase/app";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+} from "firebase/auth";
 import {
   getFirestore,
-  serverTimestamp as _serverTimestamp,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
 } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -15,8 +24,34 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
 
-export const db = getFirestore(app);
 export const auth = getAuth(app);
-export const serverTimestamp = _serverTimestamp;
+export const provider = new GoogleAuthProvider();
+export const db = getFirestore(app);
+export const serverTs = serverTimestamp;
+
+export async function ensureUserProfile(user: any) {
+  const ref = doc(db, "users", user.uid);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) {
+    await setDoc(ref, {
+      id: user.uid,
+      displayName: user.displayName,
+      email: user.email,
+      photoURL: user.photoURL,
+      createdAt: serverTimestamp(),
+    });
+  }
+}
+
+export async function loginWithGoogle() {
+  const result = await signInWithPopup(auth, provider);
+  await ensureUserProfile(result.user);
+  return result.user;
+}
+
+export async function logoutUser() {
+  return signOut(auth);
+}
