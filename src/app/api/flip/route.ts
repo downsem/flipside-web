@@ -50,11 +50,9 @@ export async function POST(req: NextRequest) {
             max_output_tokens: 256,
           });
 
-          // responses.create has a convenience field for plain text
+          // Try to get a plain text output from the response.
           const rawText: string =
-            // @ts-expect-error - SDK typing is slightly loose; output_text exists at runtime
             (response as any).output_text ??
-            // Fallback digging into the structured output just in case
             ((response as any).output?.[0]?.content?.[0]?.text ?? "");
 
           const finalText =
