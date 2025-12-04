@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
-type Platform = "x" | "threads" | "bluesky" | "unknown";
+type Platform =
+  | "x"
+  | "threads"
+  | "bluesky"
+  | "truth"
+  | "reddit"
+  | "unknown";
 
 function detectPlatform(url: URL): Platform {
   const host = url.hostname.toLowerCase();
@@ -8,6 +14,9 @@ function detectPlatform(url: URL): Platform {
   if (host.includes("x.com") || host.includes("twitter.com")) return "x";
   if (host.includes("threads.net")) return "threads";
   if (host.includes("bsky.app")) return "bluesky";
+  if (host.includes("truthsocial.com")) return "truth";
+  if (host.includes("reddit.com")) return "reddit";
+
   return "unknown";
 }
 
@@ -56,13 +65,7 @@ export async function POST(req: NextRequest) {
 
     const platform = detectPlatform(parsed);
 
-    if (platform === "unknown") {
-      return NextResponse.json(
-        { ok: false, platform, reason: "UNSUPPORTED_PLATFORM" },
-        { status: 400 }
-      );
-    }
-
+    // Try to fetch HTML for ANY public URL.
     const res = await fetch(parsed.toString(), {
       headers: {
         "User-Agent":
@@ -78,12 +81,13 @@ export async function POST(req: NextRequest) {
           reason: "FETCH_FAILED",
           statusCode: res.status,
         },
-        { status: 502 }
+        { status: 200 }
       );
     }
 
     const html = await res.text();
 
+    // Prefer description-like tags, fall back to title.
     const title =
       extractMeta(html, "og:title", "twitter:title", "title") ?? null;
     const description =
@@ -94,34 +98,22 @@ export async function POST(req: NextRequest) {
         "description"
       ) ?? null;
 
-    const text = description || title;
+    const rawText = description || title;
 
-    if (!text) {
+    if (!rawText) {
       return NextResponse.json(
         { ok: false, platform, reason: "NO_TEXT_FOUND" },
         { status: 200 }
       );
     }
 
-    let authorName: string | null = null;
-    let authorHandle: string | null = null;
-
-    if (title && title.includes("@")) {
-      const parts = title.split("@");
-      if (parts.length >= 2) {
-        authorHandle = "@" + parts[1].split(/[)\s]/)[0];
-        authorName = parts[0].replace(/[-–|•]+$/, "").trim();
-      }
-    }
-
+    // Return the raw text; client will build a short snippet + source.
     return NextResponse.json({
       ok: true,
       platform,
       title,
       description,
-      text,
-      authorName,
-      authorHandle,
+      text: rawText,
     });
   } catch (err) {
     console.error("Error in /api/import:", err);

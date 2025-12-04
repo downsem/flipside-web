@@ -11,7 +11,14 @@ import { auth, db, serverTs, ensureUserProfile } from "../firebase";
 import { collection, doc, setDoc } from "firebase/firestore";
 
 type SourceType = "original" | "import-self" | "import-other";
-type SourcePlatform = "x" | "threads" | "bluesky";
+
+type SourcePlatform =
+  | "x"
+  | "threads"
+  | "bluesky"
+  | "truth"
+  | "reddit"
+  | "other";
 
 type ImportResult = {
   ok: boolean;
@@ -19,10 +26,10 @@ type ImportResult = {
   text?: string;
   title?: string | null;
   description?: string | null;
-  authorName?: string | null;
-  authorHandle?: string | null;
   reason?: string;
 };
+
+const MAX_SNIPPET_LENGTH = 320; // keep snippets short & preview-like
 
 export default function AddPage() {
   const [text, setText] = useState("");
@@ -42,6 +49,16 @@ export default function AddPage() {
   function handleSourceTypeChange(e: ChangeEvent<HTMLInputElement>) {
     const value = e.target.value as SourceType;
     setSourceType(value);
+  }
+
+  function buildSnippet(raw: string, url: string): string {
+    const normalized = raw.trim().replace(/\s+/g, " ");
+    let snippet = normalized;
+    if (normalized.length > MAX_SNIPPET_LENGTH) {
+      snippet = normalized.slice(0, MAX_SNIPPET_LENGTH - 1) + "…";
+    }
+    // Short preview + explicit source line
+    return `"${snippet}"\n\nSource: ${url}`;
   }
 
   async function handleImportFromUrl() {
@@ -64,32 +81,44 @@ export default function AddPage() {
 
       if (!data.ok || !data.text) {
         setImportHint(
-          "We couldn’t automatically import that post. Please paste the text manually."
+          "We couldn’t automatically import that link. Please paste a short excerpt manually."
         );
         return;
       }
 
+      // Try to infer platform if server detected something known
       if (
         data.platform &&
         data.platform !== "unknown" &&
         (data.platform === "x" ||
           data.platform === "threads" ||
-          data.platform === "bluesky")
+          data.platform === "bluesky" ||
+          data.platform === "truth" ||
+          data.platform === "reddit")
       ) {
         setSourcePlatform(data.platform);
+      } else if (sourcePlatform === "x") {
+        // If it was still default "x" and we didn't get a better guess, mark as "other"
+        setSourcePlatform("other");
       }
 
+      const snippet = buildSnippet(data.text, sourceUrl.trim());
+
+      // If the textarea is empty, fill it. If not, don't overwrite the user.
       if (!text.trim()) {
-        setText(data.text);
+        setText(snippet);
       } else {
-        setText((prev) => prev || data.text || "");
+        // Optionally append below existing text, but keep it simple for now
+        setText((prev) => prev || snippet);
       }
 
-      setImportHint("Imported preview text. You can edit it before posting.");
+      setImportHint(
+        "Imported a short preview. You can edit it before posting."
+      );
     } catch (err) {
       console.error("Error importing from URL:", err);
       setImportHint(
-        "Something went wrong importing that URL. Please paste the text manually."
+        "Something went wrong importing that URL. Please paste a short excerpt manually."
       );
     } finally {
       setImportBusy(false);
@@ -107,7 +136,7 @@ export default function AddPage() {
     }
 
     if (isImported && !sourceUrl.trim()) {
-      setError("Please include a link to the original post.");
+      setError("Please include a link to the original post or page.");
       return;
     }
 
@@ -196,7 +225,7 @@ export default function AddPage() {
                   checked={sourceType === "original"}
                   onChange={handleSourceTypeChange}
                 />
-                <span>Original post</span>
+                <span>Original thought or post</span>
               </label>
               <label className="inline-flex items-center gap-2">
                 <input
@@ -227,10 +256,11 @@ export default function AddPage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
                   <p className="font-medium text-slate-800">
-                    Source platform (text-based only)
+                    Source platform (for your own tracking)
                   </p>
                   <p className="text-slate-500">
-                    We currently support X, Threads, and Bluesky.
+                    Paste links from X, Threads, Bluesky, Truth Social,
+                    Reddit, or any public article, blog, or post.
                   </p>
                 </div>
                 <select
@@ -243,12 +273,15 @@ export default function AddPage() {
                   <option value="x">X</option>
                   <option value="threads">Threads</option>
                   <option value="bluesky">Bluesky</option>
+                  <option value="truth">Truth Social</option>
+                  <option value="reddit">Reddit</option>
+                  <option value="other">Other / Website</option>
                 </select>
               </div>
 
               <div className="space-y-1">
                 <label className="font-medium text-slate-800" htmlFor="sourceUrl">
-                  Link to the original post
+                  Link to the original post or page
                 </label>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <input
@@ -266,7 +299,7 @@ export default function AddPage() {
                     disabled={importBusy || !sourceUrl.trim()}
                     className="whitespace-nowrap rounded-2xl bg-slate-900 px-4 py-2 text-[11px] font-medium text-white disabled:opacity-50"
                   >
-                    {importBusy ? "Importing…" : "Import from URL"}
+                    {importBusy ? "Importing…" : "Import from link"}
                   </button>
                 </div>
                 {importHint && (
@@ -277,8 +310,8 @@ export default function AddPage() {
               </div>
 
               <p className="text-[10px] text-slate-500">
-                We&apos;ll try to pull the text from this link. If it doesn&apos;t
-                work, you can paste it manually.
+                We pull a short preview from the page and add a Source line.
+                You&apos;re responsible for how you quote and share content.
               </p>
             </div>
           )}
@@ -287,7 +320,7 @@ export default function AddPage() {
           <div className="rounded-[28px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <textarea
               className="h-40 w-full resize-none rounded-2xl border-0 bg-transparent px-1 py-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-              placeholder="Paste the original post text..."
+              placeholder="Paste or write the original post text..."
               value={text}
               onChange={(e) => setText(e.target.value)}
               disabled={busy}
