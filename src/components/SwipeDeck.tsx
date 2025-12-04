@@ -26,10 +26,18 @@ export default function SwipeDeck({
   onVote,
   onReply,
 }: SwipeDeckProps) {
-  const [rewrites, setRewrites] = useState<Record<TimelineId, any>>({});
+  // FIX: give useState a properly shaped initial value
+  const [rewrites, setRewrites] = useState<Record<TimelineId, any>>({
+    calm: undefined,
+    bridge: undefined,
+    cynical: undefined,
+    opposite: undefined,
+    playful: undefined,
+  });
   const [index, setIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
 
+  // Subscribe to rewrites for this post
   useEffect(() => {
     const rewritesRef = collection(db, "posts", post.id, "rewrites");
     const q = query(rewritesRef);
@@ -42,19 +50,22 @@ export default function SwipeDeck({
         opposite: undefined as any,
         playful: undefined as any,
       };
-      snap.forEach((doc) => {
-        const data = doc.data() as any;
+
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as any;
         const id = data.timelineId as TimelineId;
         if (id) {
           map[id] = { id, ...data };
         }
       });
+
       setRewrites(map);
     });
 
     return () => unsub();
   }, [post.id]);
 
+  // Reset card index when filter changes
   useEffect(() => {
     setIndex(0);
   }, [selectedTimeline]);
