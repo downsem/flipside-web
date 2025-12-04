@@ -1,8 +1,8 @@
 // src/app/api/flip/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { db, serverTimestamp } from "@/app/firebase";
-import { doc, setDoc } from "firebase/firestore";
+import { db } from "@/app/firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { TIMELINE_LIST } from "@/theme/timelines";
 import type { TimelineId } from "@/theme/timelines";
 
