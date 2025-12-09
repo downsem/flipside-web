@@ -7,8 +7,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
-  User,
 } from "firebase/auth";
+import type { User } from "firebase/auth";
 import {
   getFirestore,
   serverTimestamp,
