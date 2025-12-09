@@ -121,7 +121,7 @@ export default function SwipeDeck({
     setReplyText("");
   }
 
-  // --- NEW: source label for all cards ---
+  // Label for the source link
   const sourceLabel =
     post.sourcePlatform && post.sourcePlatform !== "other"
       ? post.sourcePlatform.charAt(0).toUpperCase() +
@@ -130,23 +130,8 @@ export default function SwipeDeck({
 
   return (
     <div className="space-y-3">
-
-      {/* Header row: left = source link, right = badge & pager */}
+      {/* Header row: left = badge + source link, right = pager */}
       <div className="flex items-center justify-between mb-1">
-
-        {/* --- NEW INLINE SOURCE LINK --- */}
-        {post.sourceUrl && (
-          <a
-            href={post.sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[11px] text-slate-500 underline pr-2"
-          >
-            {sourceLabel} ↗
-          </a>
-        )}
-
-        {/* Badge + pager */}
         <div className="flex items-center gap-3">
           {/* Lens badge */}
           <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
@@ -156,31 +141,43 @@ export default function SwipeDeck({
             </span>
           </div>
 
-          {/* Pager */}
-          {cards.length > 1 && (
-            <div className="flex items-center gap-2 text-[11px] text-slate-500">
-              <button
-                type="button"
-                onClick={handlePrev}
-                disabled={index === 0}
-                className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
-              >
-                ‹
-              </button>
-              <span>
-                {index + 1}/{cards.length}
-              </span>
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={index === cards.length - 1}
-                className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
-              >
-                ›
-              </button>
-            </div>
+          {/* Source link to the RIGHT of badge (shown on all cards) */}
+          {post.sourceUrl && (
+            <a
+              href={post.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-slate-500 underline"
+            >
+              {sourceLabel} ↗
+            </a>
           )}
         </div>
+
+        {/* Pager */}
+        {cards.length > 1 && (
+          <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <button
+              type="button"
+              onClick={handlePrev}
+              disabled={index === 0}
+              className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
+            >
+              ‹
+            </button>
+            <span>
+              {index + 1}/{cards.length}
+            </span>
+            <button
+              type="button"
+              onClick={handleNext}
+              disabled={index === cards.length - 1}
+              className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
+            >
+              ›
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Text */}
@@ -191,17 +188,18 @@ export default function SwipeDeck({
       {/* Actions: vote + reply */}
       <div className="flex items-center justify-between text-[11px]">
         <div className="flex items-center gap-2">
+          {/* Neutral styles for both buttons so nothing looks pre-selected */}
           <button
             type="button"
             onClick={() => onVote(current.id, 1)}
-            className="px-3 py-1 rounded-full bg-slate-900 text-white"
+            className="px-3 py-1 rounded-full border border-slate-300 bg-white text-slate-700"
           >
             👍
           </button>
           <button
             type="button"
             onClick={() => onVote(current.id, -1)}
-            className="px-3 py-1 rounded-full border border-slate-300 text-slate-700"
+            className="px-3 py-1 rounded-full border border-slate-300 bg-white text-slate-700"
           >
             👎
           </button>
