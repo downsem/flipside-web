@@ -1,20 +1,22 @@
-"use client";
+// src/app/firebase.ts
+// Centralized Firebase initialization for Flipside
 
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
-  signOut,
+  onAuthStateChanged,
 } from "firebase/auth";
 import {
   getFirestore,
-  doc,
-  getDoc,
-  setDoc,
   serverTimestamp,
+  Timestamp,
 } from "firebase/firestore";
 
+// IMPORTANT:
+// We only use NEXT_PUBLIC_ env vars here so this module can be shared
+// between client and server code safely.
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -24,34 +26,21 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-const app = initializeApp(firebaseConfig);
+// Avoid re-initializing in dev/hot-reload
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
-export const provider = new GoogleAuthProvider();
-export const db = getFirestore(app);
-export const serverTs = serverTimestamp;
+// Client-side auth & shared Firestore instance
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-export async function ensureUserProfile(user: any) {
-  const ref = doc(db, "users", user.uid);
-  const snap = await getDoc(ref);
-
-  if (!snap.exists()) {
-    await setDoc(ref, {
-      id: user.uid,
-      displayName: user.displayName,
-      email: user.email,
-      photoURL: user.photoURL,
-      createdAt: serverTimestamp(),
-    });
-  }
-}
-
-export async function loginWithGoogle() {
-  const result = await signInWithPopup(auth, provider);
-  await ensureUserProfile(result.user);
-  return result.user;
-}
-
-export async function logoutUser() {
-  return signOut(auth);
-}
+// Re-export helpers used across the app
+export {
+  app,
+  auth,
+  db,
+  serverTimestamp,
+  Timestamp,
+  GoogleAuthProvider,
+  signInWithPopup,
+  onAuthStateChanged,
+};
