@@ -26,7 +26,7 @@ export default function SwipeDeck({
   onVote,
   onReply,
 }: SwipeDeckProps) {
-  // FIX: give useState a properly shaped initial value
+  // Give useState a properly shaped initial value
   const [rewrites, setRewrites] = useState<Record<TimelineId, any>>({
     calm: undefined,
     bridge: undefined,
@@ -156,6 +156,20 @@ export default function SwipeDeck({
           </div>
         )}
       </div>
+
+      {/* NEW: link to original post when available */}
+      {current.id === "original" && post.sourceUrl && (
+        <div className="mb-1 text-[11px] text-slate-500">
+          <a
+            href={post.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            View original post
+          </a>
+        </div>
+      )}
 
       {/* Text */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-900 whitespace-pre-wrap">
