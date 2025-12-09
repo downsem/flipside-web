@@ -26,7 +26,6 @@ export default function SwipeDeck({
   onVote,
   onReply,
 }: SwipeDeckProps) {
-  // Give useState a properly shaped initial value
   const [rewrites, setRewrites] = useState<Record<TimelineId, any>>({
     calm: undefined,
     bridge: undefined,
@@ -122,54 +121,67 @@ export default function SwipeDeck({
     setReplyText("");
   }
 
+  // --- NEW: source label for all cards ---
+  const sourceLabel =
+    post.sourcePlatform && post.sourcePlatform !== "other"
+      ? post.sourcePlatform.charAt(0).toUpperCase() +
+        post.sourcePlatform.slice(1)
+      : "Source";
+
   return (
     <div className="space-y-3">
-      {/* Card header with chip & simple pager */}
-      <div className="flex items-center justify-between mb-1">
-        <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
-          <span className="text-[11px] font-medium text-slate-700">
-            {current.icon && <span className="mr-1">{current.icon}</span>}
-            {current.label}
-          </span>
-        </div>
-        {cards.length > 1 && (
-          <div className="flex items-center gap-2 text-[11px] text-slate-500">
-            <button
-              type="button"
-              onClick={handlePrev}
-              disabled={index === 0}
-              className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
-            >
-              ‹
-            </button>
-            <span>
-              {index + 1}/{cards.length}
-            </span>
-            <button
-              type="button"
-              onClick={handleNext}
-              disabled={index === cards.length - 1}
-              className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
-            >
-              ›
-            </button>
-          </div>
-        )}
-      </div>
 
-      {/* NEW: link to original post when available */}
-      {current.id === "original" && post.sourceUrl && (
-        <div className="mb-1 text-[11px] text-slate-500">
+      {/* Header row: left = source link, right = badge & pager */}
+      <div className="flex items-center justify-between mb-1">
+
+        {/* --- NEW INLINE SOURCE LINK --- */}
+        {post.sourceUrl && (
           <a
             href={post.sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline"
+            className="text-[11px] text-slate-500 underline pr-2"
           >
-            View original post
+            {sourceLabel} ↗
           </a>
+        )}
+
+        {/* Badge + pager */}
+        <div className="flex items-center gap-3">
+          {/* Lens badge */}
+          <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
+            <span className="text-[11px] font-medium text-slate-700">
+              {current.icon && <span className="mr-1">{current.icon}</span>}
+              {current.label}
+            </span>
+          </div>
+
+          {/* Pager */}
+          {cards.length > 1 && (
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <button
+                type="button"
+                onClick={handlePrev}
+                disabled={index === 0}
+                className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
+              >
+                ‹
+              </button>
+              <span>
+                {index + 1}/{cards.length}
+              </span>
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={index === cards.length - 1}
+                className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
+              >
+                ›
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Text */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-900 whitespace-pre-wrap">
