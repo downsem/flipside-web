@@ -13,10 +13,11 @@ const openai = new OpenAI({
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
     const postId = body.postId as string | undefined;
     const text = body.text as string | undefined;
 
-    if (!postId || !text) {
+    if (!postId || !text || !text.trim()) {
       return NextResponse.json(
         { error: "Missing postId or text" },
         { status: 400 }
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      console.error("OPENAI_API_KEY is not set on the server");
+      console.error("[/api/flip] OPENAI_API_KEY is not set on the server");
       return NextResponse.json(
         { error: "Server misconfigured: missing OpenAI key" },
         { status: 500 }
@@ -38,25 +39,42 @@ export async function POST(req: NextRequest) {
         const rewriteRef = doc(db, "posts", postId, "rewrites", timelineId);
 
         try {
-          const response = await openai.responses.create({
+          const completion = await openai.chat.completions.create({
             model: "gpt-4.1-mini",
-            input:
-              `You rewrite social media posts into different lenses.\n\n` +
-              `Current lens: "${timeline.label}".\n\n` +
-              `Lens instructions:\n${timeline.prompt}\n\n` +
-              `Original post:\n${text}\n\n` +
-              `Rewrite this post following the lens instructions. ` +
-              `Keep it under 120 words, suitable as a single social post.`,
-            max_output_tokens: 256,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You rewrite social media posts into different lenses. " +
+                  "Always keep the result under 120 words, suitable as a single social post.",
+              },
+              {
+                role: "system",
+                content:
+                  `Current lens: "${timeline.label}". ` +
+                  `Lens instructions:\n${timeline.prompt}`,
+              },
+              {
+                role: "user",
+                content: `Original post:\n${text}`,
+              },
+            ],
+            max_tokens: 256,
           });
 
-          // Try to get a plain text output from the response.
-          const rawText: string =
-            (response as any).output_text ??
-            ((response as any).output?.[0]?.content?.[0]?.text ?? "");
+          let rawContent = completion.choices[0]?.message?.content ?? "";
+
+          // In the new SDK, content *can* be an array; normalize to string.
+          if (Array.isArray(rawContent)) {
+            rawContent = rawContent
+              .map((part) =>
+                typeof part === "string" ? part : (part as any).text ?? ""
+              )
+              .join(" ");
+          }
 
           const finalText =
-            (rawText || "").trim() ||
+            (rawContent || "").toString().trim() ||
             "(We couldn't generate this rewrite right now.)";
 
           await setDoc(
@@ -71,7 +89,11 @@ export async function POST(req: NextRequest) {
 
           return { timelineId, ok: true };
         } catch (err: any) {
-          console.error("Error generating rewrite for", timelineId, err);
+          console.error(
+            "[/api/flip] Error generating rewrite for",
+            timelineId,
+            err
+          );
 
           // Still write a stub so the UI has something to show.
           await setDoc(
@@ -105,7 +127,7 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     );
   } catch (err: any) {
-    console.error("Fatal error in /api/flip:", err);
+    console.error("[/api/flip] Fatal error:", err);
     return NextResponse.json(
       { error: "Internal error generating rewrites" },
       { status: 500 }
