@@ -20,16 +20,15 @@ type SourcePlatform =
   | "reddit"
   | "other";
 
-type ImportResult = {
-  ok: boolean;
-  platform?: SourcePlatform | "unknown";
-  text?: string;
-  title?: string | null;
-  description?: string | null;
-  reason?: string;
+// Simple label map just for the helper text
+const PLATFORM_LABEL: Record<SourcePlatform, string> = {
+  x: "x",
+  threads: "threads",
+  bluesky: "bluesky",
+  truth: "truth",
+  reddit: "reddit",
+  other: "source",
 };
-
-const MAX_SNIPPET_LENGTH = 320; // keep snippets short & preview-like
 
 export default function AddPage() {
   const [text, setText] = useState("");
@@ -40,8 +39,7 @@ export default function AddPage() {
   const [sourcePlatform, setSourcePlatform] =
     useState<SourcePlatform>("x");
   const [sourceUrl, setSourceUrl] = useState("");
-  const [importBusy, setImportBusy] = useState(false);
-  const [importHint, setImportHint] = useState<string | null>(null);
+  const [linkSaved, setLinkSaved] = useState(false);
 
   const router = useRouter();
   const isImported = sourceType !== "original";
@@ -51,78 +49,13 @@ export default function AddPage() {
     setSourceType(value);
   }
 
-  function buildSnippet(raw: string, url: string): string {
-    const normalized = raw.trim().replace(/\s+/g, " ");
-    let snippet = normalized;
-    if (normalized.length > MAX_SNIPPET_LENGTH) {
-      snippet = normalized.slice(0, MAX_SNIPPET_LENGTH - 1) + "…";
-    }
-    // Short preview + explicit source line
-    return `"${snippet}"\n\nSource: ${url}`;
-  }
-
-  async function handleImportFromUrl() {
+  // NEW: just mark that we’ve captured the link; no scraping/import
+  function handleImportFromUrl() {
     if (!sourceUrl.trim()) {
-      setImportHint("Please enter a URL first.");
+      setLinkSaved(false);
       return;
     }
-
-    try {
-      setImportBusy(true);
-      setImportHint(null);
-
-      const res = await fetch("/api/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: sourceUrl.trim() }),
-      });
-
-      const data: ImportResult = await res.json();
-
-      if (!data.ok || !data.text) {
-        setImportHint(
-          "We couldn’t automatically import that link. Please paste a short excerpt manually."
-        );
-        return;
-      }
-
-      // Try to infer platform if server detected something known
-      if (
-        data.platform &&
-        data.platform !== "unknown" &&
-        (data.platform === "x" ||
-          data.platform === "threads" ||
-          data.platform === "bluesky" ||
-          data.platform === "truth" ||
-          data.platform === "reddit")
-      ) {
-        setSourcePlatform(data.platform);
-      } else if (sourcePlatform === "x") {
-        // If it was still default "x" and we didn't get a better guess, mark as "other"
-        setSourcePlatform("other");
-      }
-
-      const snippet = buildSnippet(data.text, sourceUrl.trim());
-
-      // If the textarea is empty, fill it. If not, don't overwrite the user.
-      if (!text.trim()) {
-        setText(snippet);
-      } else {
-        // Optionally append below existing text, but keep it simple for now
-        setText((prev) => prev || snippet);
-      }
-
-      setImportHint(
-        "Imported a short preview. You can edit it before posting."
-      );
-    } catch (err) {
-      console.error("Error importing from URL:", err);
-      setImportHint(
-        "Something went wrong importing that URL. Please paste a short excerpt manually."
-      );
-    } finally {
-      setImportBusy(false);
-    }
+    setLinkSaved(true);
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -290,29 +223,36 @@ export default function AddPage() {
                     placeholder="https://"
                     className="w-full rounded-full border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
                     value={sourceUrl}
-                    onChange={(e) => setSourceUrl(e.target.value)}
-                    disabled={busy || importBusy}
+                    onChange={(e) => {
+                      setSourceUrl(e.target.value);
+                      setLinkSaved(false);
+                    }}
+                    disabled={busy}
                   />
                   <button
                     type="button"
                     onClick={handleImportFromUrl}
-                    disabled={importBusy || !sourceUrl.trim()}
+                    disabled={!sourceUrl.trim()}
                     className="whitespace-nowrap rounded-2xl bg-slate-900 px-4 py-2 text-[11px] font-medium text-white disabled:opacity-50"
                   >
-                    {importBusy ? "Importing…" : "Import from link"}
+                    Import from link
                   </button>
                 </div>
-                {importHint && (
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    {importHint}
+
+                {/* Helper + success message */}
+                <p className="mt-2 text-[10px] text-slate-500">
+                  We’ll show this as a small “{PLATFORM_LABEL[sourcePlatform]}:
+                  View source” link on your Flip card. You&apos;re responsible
+                  for how you quote and share content.
+                </p>
+
+                {linkSaved && (
+                  <p className="mt-1 text-[10px] text-emerald-700">
+                    Link saved. It will appear on your Flip as a clickable
+                    source link.
                   </p>
                 )}
               </div>
-
-              <p className="text-[10px] text-slate-500">
-                We pull a short preview from the page and add a Source line.
-                You&apos;re responsible for how you quote and share content.
-              </p>
             </div>
           )}
 
