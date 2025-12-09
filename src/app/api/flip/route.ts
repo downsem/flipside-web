@@ -24,15 +24,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      console.error("[/api/flip] OPENAI_API_KEY is not set on the server");
-      return NextResponse.json(
-        { error: "Server misconfigured: missing OpenAI key" },
-        { status: 500 }
-      );
-    }
+    // NOTE:
+    // We intentionally do NOT early-return if OPENAI_API_KEY is missing.
+    // Instead, we let the per-timeline try/catch below handle any OpenAI errors,
+    // write stub rewrites, and still return 200 to the client. That way the
+    // flip creation never “fails” just because rewrites couldn’t be generated.
 
-    // Generate a rewrite for each timeline in parallel.
     const results = await Promise.all(
       TIMELINE_LIST.map(async (timeline) => {
         const timelineId = timeline.id as TimelineId;
@@ -118,6 +115,8 @@ export async function POST(req: NextRequest) {
 
     const hadErrors = results.some((r) => !r.ok);
 
+    // IMPORTANT: Always return 200 here so the Add page doesn’t show a fatal error.
+    // The UI can optionally inspect `partialFailure` if you ever want to surface a softer warning.
     return NextResponse.json(
       {
         ok: true,
@@ -128,9 +127,17 @@ export async function POST(req: NextRequest) {
     );
   } catch (err: any) {
     console.error("[/api/flip] Fatal error:", err);
+
+    // Even on a top-level failure, don’t kill the flip UX.
+    // Return 200 with a marker that rewrites failed entirely.
     return NextResponse.json(
-      { error: "Internal error generating rewrites" },
-      { status: 500 }
+      {
+        ok: false,
+        partialFailure: true,
+        details: [],
+        error: "Internal error generating rewrites",
+      },
+      { status: 200 }
     );
   }
 }
