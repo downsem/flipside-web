@@ -1,3 +1,4 @@
+// src/components/SwipeDeck.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -26,6 +27,7 @@ export default function SwipeDeck({
   onVote,
   onReply,
 }: SwipeDeckProps) {
+  // Keep explicit keys so TypeScript is happy and we have stable shape
   const [rewrites, setRewrites] = useState<Record<TimelineId, any>>({
     calm: undefined,
     bridge: undefined,
@@ -33,6 +35,7 @@ export default function SwipeDeck({
     opposite: undefined,
     playful: undefined,
   });
+
   const [index, setIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
 
@@ -121,40 +124,24 @@ export default function SwipeDeck({
     setReplyText("");
   }
 
-  // Label for the source link
+  // --- Source attribution line (shown on ALL cards when a link exists) ---
+  const hasSource = !!post?.sourceUrl;
   const sourceLabel =
-    post.sourcePlatform && post.sourcePlatform !== "other"
+    post?.sourcePlatform && post.sourcePlatform !== "other"
       ? post.sourcePlatform.charAt(0).toUpperCase() +
         post.sourcePlatform.slice(1)
-      : "Source";
+      : "original post";
 
   return (
     <div className="space-y-3">
-      {/* Header row: left = badge + source link, right = pager */}
+      {/* Card header with chip & simple pager */}
       <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-3">
-          {/* Lens badge */}
-          <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
-            <span className="text-[11px] font-medium text-slate-700">
-              {current.icon && <span className="mr-1">{current.icon}</span>}
-              {current.label}
-            </span>
-          </div>
-
-          {/* Source link to the RIGHT of badge (shown on all cards) */}
-          {post.sourceUrl && (
-            <a
-              href={post.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[11px] text-slate-500 underline"
-            >
-              {sourceLabel} ↗
-            </a>
-          )}
+        <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
+          <span className="text-[11px] font-medium text-slate-700">
+            {current.icon && <span className="mr-1">{current.icon}</span>}
+            {current.label}
+          </span>
         </div>
-
-        {/* Pager */}
         {cards.length > 1 && (
           <div className="flex items-center gap-2 text-[11px] text-slate-500">
             <button
@@ -180,6 +167,22 @@ export default function SwipeDeck({
         )}
       </div>
 
+      {/* Source line – directly under the header, on ALL versions when we have a link */}
+      {hasSource && (
+        <div className="mt-1 text-[11px] text-slate-500">
+          <span>This Flip was originally posted on: </span>
+          <a
+            href={post.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline break-all"
+            title={sourceLabel}
+          >
+            {post.sourceUrl}
+          </a>
+        </div>
+      )}
+
       {/* Text */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-900 whitespace-pre-wrap">
         {current.text}
@@ -188,18 +191,17 @@ export default function SwipeDeck({
       {/* Actions: vote + reply */}
       <div className="flex items-center justify-between text-[11px]">
         <div className="flex items-center gap-2">
-          {/* Neutral styles for both buttons so nothing looks pre-selected */}
           <button
             type="button"
             onClick={() => onVote(current.id, 1)}
-            className="px-3 py-1 rounded-full border border-slate-300 bg-white text-slate-700"
+            className="px-3 py-1 rounded-full bg-slate-900 text-white"
           >
             👍
           </button>
           <button
             type="button"
             onClick={() => onVote(current.id, -1)}
-            className="px-3 py-1 rounded-full border border-slate-300 bg-white text-slate-700"
+            className="px-3 py-1 rounded-full border border-slate-300 text-slate-700"
           >
             👎
           </button>
