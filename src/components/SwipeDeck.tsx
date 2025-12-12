@@ -194,14 +194,14 @@ export default function SwipeDeck({
           <button
             type="button"
             onClick={() => onVote(current.id, 1)}
-            className="px-3 py-1 rounded-full bg-slate-900 text-white"
+            className="px-3 py-1 rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
           >
             👍
           </button>
           <button
             type="button"
             onClick={() => onVote(current.id, -1)}
-            className="px-3 py-1 rounded-full border border-slate-300 text-slate-700"
+            className="px-3 py-1 rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
           >
             👎
           </button>
