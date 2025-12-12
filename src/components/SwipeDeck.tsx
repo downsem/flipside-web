@@ -5,11 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import {
   collection,
   onSnapshot,
-  query,
   orderBy,
-  type Timestamp,
+  query,
 } from "firebase/firestore";
-import { db, auth } from "@/app/firebase";
+import { db } from "@/app/firebase";
 import type { TimelineId, TimelineSpec } from "@/theme/timelines";
 import { TIMELINE_LIST } from "@/theme/timelines";
 
@@ -20,11 +19,12 @@ type FlipCard = {
   text: string;
 };
 
-type Reply = {
+type ReplyDoc = {
   id: string;
   text: string;
-  authorId?: string;
-  createdAt?: Timestamp | any;
+  authorId: string;
+  timelineId: "original" | TimelineId;
+  createdAt?: any;
 };
 
 type SwipeDeckProps = {
@@ -40,7 +40,6 @@ export default function SwipeDeck({
   onVote,
   onReply,
 }: SwipeDeckProps) {
-  // Keep explicit keys so TypeScript is happy and we have stable shape
   const [rewrites, setRewrites] = useState<Record<TimelineId, any>>({
     calm: undefined,
     bridge: undefined,
@@ -49,11 +48,9 @@ export default function SwipeDeck({
     playful: undefined,
   });
 
+  const [replies, setReplies] = useState<ReplyDoc[]>([]);
   const [index, setIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
-
-  // NEW: replies for the currently viewed card
-  const [replies, setReplies] = useState<Reply[]>([]);
 
   // Subscribe to rewrites for this post
   useEffect(() => {
@@ -81,6 +78,29 @@ export default function SwipeDeck({
     return () => unsub();
   }, [post.id]);
 
+  // ✅ Subscribe to replies for this post (single collection)
+  useEffect(() => {
+    const repliesRef = collection(db, "posts", post.id, "replies");
+    const q = query(repliesRef, orderBy("createdAt", "asc"));
+
+    const unsub = onSnapshot(q, (snap) => {
+      const list: ReplyDoc[] = [];
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as any;
+        list.push({
+          id: docSnap.id,
+          text: data.text,
+          authorId: data.authorId,
+          timelineId: data.timelineId,
+          createdAt: data.createdAt,
+        });
+      });
+      setReplies(list);
+    });
+
+    return () => unsub();
+  }, [post.id]);
+
   // Reset card index when filter changes
   useEffect(() => {
     setIndex(0);
@@ -89,11 +109,7 @@ export default function SwipeDeck({
   const cards: FlipCard[] = useMemo(() => {
     if (selectedTimeline === "all") {
       const list: FlipCard[] = [
-        {
-          id: "original",
-          label: "Original",
-          text: post.text,
-        },
+        { id: "original", label: "Original", text: post.text },
       ];
 
       TIMELINE_LIST.forEach((t: TimelineSpec) => {
@@ -123,6 +139,11 @@ export default function SwipeDeck({
 
   const current = cards[index] ?? cards[0];
 
+  // ✅ Replies for this card only
+  const currentReplies = useMemo(() => {
+    return replies.filter((r) => r.timelineId === current.id);
+  }, [replies, current.id]);
+
   function handlePrev() {
     setIndex((prev) => (prev > 0 ? prev - 1 : prev));
   }
@@ -146,44 +167,9 @@ export default function SwipeDeck({
         post.sourcePlatform.slice(1)
       : "original post";
 
-  // NEW: subscribe to replies for the CURRENT card (original vs timeline)
-  useEffect(() => {
-    if (!post?.id || !current?.id) return;
-
-    const repliesRef =
-      current.id === "original"
-        ? collection(db, "posts", post.id, "replies")
-        : collection(db, "posts", post.id, "rewrites", current.id, "replies");
-
-    const q = query(repliesRef, orderBy("createdAt", "asc"));
-
-    const unsub = onSnapshot(q, (snap) => {
-      const list: Reply[] = [];
-      snap.forEach((d) => {
-        list.push({ id: d.id, ...(d.data() as any) });
-      });
-      setReplies(list);
-    });
-
-    return () => unsub();
-  }, [post.id, current.id]);
-
-  const me = auth.currentUser?.uid;
-
-  function formatTs(ts: any) {
-    try {
-      if (!ts) return "";
-      // Firestore Timestamp has .toDate()
-      const d = typeof ts?.toDate === "function" ? ts.toDate() : new Date(ts);
-      return d.toLocaleString();
-    } catch {
-      return "";
-    }
-  }
-
   return (
     <div className="space-y-3">
-      {/* Card header with chip & simple pager */}
+      {/* Card header with chip & pager */}
       <div className="flex items-center justify-between mb-1">
         <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
           <span className="text-[11px] font-medium text-slate-700">
@@ -217,7 +203,7 @@ export default function SwipeDeck({
         )}
       </div>
 
-      {/* Source line – directly under the header, on ALL versions when we have a link */}
+      {/* Source line */}
       {hasSource && (
         <div className="mt-1 text-[11px] text-slate-500">
           <span>This Flip was originally posted on: </span>
@@ -238,7 +224,7 @@ export default function SwipeDeck({
         {current.text}
       </div>
 
-      {/* Actions: vote */}
+      {/* Votes */}
       <div className="flex items-center justify-between text-[11px]">
         <div className="flex items-center gap-2">
           <button
@@ -258,6 +244,24 @@ export default function SwipeDeck({
         </div>
       </div>
 
+      {/* ✅ Replies list for this card */}
+      <div className="space-y-2">
+        {currentReplies.length > 0 && (
+          <div className="text-[10px] text-slate-500">
+            Replies ({currentReplies.length})
+          </div>
+        )}
+
+        {currentReplies.map((r) => (
+          <div
+            key={r.id}
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
+          >
+            {r.text}
+          </div>
+        ))}
+      </div>
+
       {/* Reply input */}
       <div className="flex items-center gap-2 text-[11px]">
         <input
@@ -274,31 +278,6 @@ export default function SwipeDeck({
         >
           Reply
         </button>
-      </div>
-
-      {/* NEW: Replies list */}
-      <div className="space-y-2">
-        {replies.length > 0 && (
-          <div className="text-[11px] text-slate-500">
-            Replies ({replies.length})
-          </div>
-        )}
-
-        {replies.map((r) => (
-          <div
-            key={r.id}
-            className="rounded-2xl border border-slate-200 bg-white px-3 py-2"
-          >
-            <div className="text-[10px] text-slate-500 flex items-center gap-2">
-              <span>{r.authorId === me ? "You" : "User"}</span>
-              <span>•</span>
-              <span>{formatTs(r.createdAt)}</span>
-            </div>
-            <div className="text-xs text-slate-900 whitespace-pre-wrap">
-              {r.text}
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
