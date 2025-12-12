@@ -35,18 +35,27 @@ export default function PostCard({ post, selectedTimeline }: PostCardProps) {
     fetchAuthor();
   }, [post.authorId]);
 
-  async function recordLensStat(userId: string, timelineId: string, value: number) {
+  async function recordLensStat(
+    userId: string,
+    timelineId: string,
+    value: number
+  ) {
     const statRef = doc(db, "users", userId, "lensStats", "default");
     const fieldName = `${timelineId}_${value > 0 ? "up" : "down"}`;
 
     await setDoc(
       statRef,
-      { [fieldName]: increment(1) },
+      {
+        [fieldName]: increment(1),
+      },
       { merge: true }
     );
   }
 
-  async function handleVote(timelineId: "original" | TimelineId, value: number) {
+  async function handleVote(
+    timelineId: "original" | TimelineId,
+    value: number
+  ) {
     if (!user) {
       alert("Sign in to vote.");
       return;
@@ -57,26 +66,18 @@ export default function PostCard({ post, selectedTimeline }: PostCardProps) {
         ? doc(db, "posts", post.id)
         : doc(db, "posts", post.id, "rewrites", timelineId);
 
-    try {
-      await updateDoc(targetRef, { votes: increment(value) });
-      await recordLensStat(user.uid, timelineId, value);
-    } catch (err) {
-      console.error("Vote failed:", err);
-      alert("Could not save your vote. Please try again.");
-    }
+    await updateDoc(targetRef, {
+      votes: increment(value),
+    });
+
+    await recordLensStat(user.uid, timelineId, value);
   }
 
-  /**
-   * IMPORTANT CHANGE:
-   * Store ALL replies in a single collection:
-   *   posts/{postId}/replies
-   * and include timelineId on the reply doc.
-   *
-   * This avoids nested rules like:
-   *   posts/{postId}/rewrites/{timelineId}/replies
-   * which is where permission issues often return.
-   */
-  async function handleReply(timelineId: "original" | TimelineId, text: string) {
+  // ✅ Option A: ALL replies live in posts/{postId}/replies and are tagged by timelineId
+  async function handleReply(
+    timelineId: "original" | TimelineId,
+    text: string
+  ) {
     if (!user) {
       alert("Sign in to reply.");
       return;
@@ -84,34 +85,31 @@ export default function PostCard({ post, selectedTimeline }: PostCardProps) {
 
     const repliesCol = collection(db, "posts", post.id, "replies");
 
-    try {
-      await addDoc(repliesCol, {
-        text,
-        authorId: user.uid,
-        timelineId, // "original" | "calm" | "bridge" | ...
-        createdAt: serverTimestamp(),
-      });
+    await addDoc(repliesCol, {
+      text,
+      timelineId, // "original" | "calm" | ...
+      authorId: user.uid,
+      createdAt: serverTimestamp(),
+    });
 
-      // Optional: track a simple reply count on the post doc
+    // Optional: keep a simple counter on the post doc (total replies across all cards)
+    // If you later want per-card counts, we can add separate fields.
+    try {
       await updateDoc(doc(db, "posts", post.id), {
         replyCount: increment(1),
       });
-    } catch (err) {
-      console.error("Reply failed:", err);
-      alert("Could not save your reply. Please try again.");
+    } catch (e) {
+      // Non-fatal for MVP
+      console.warn("Could not increment replyCount:", e);
     }
   }
 
   async function handleDelete() {
     if (!user || user.uid !== post.authorId) return;
+
     if (!confirm("Delete this flip? This cannot be undone.")) return;
 
-    try {
-      await deleteDoc(doc(db, "posts", post.id));
-    } catch (err) {
-      console.error("Delete failed:", err);
-      alert("Could not delete this flip. Please try again.");
-    }
+    await deleteDoc(doc(db, "posts", post.id));
   }
 
   async function handleShare() {

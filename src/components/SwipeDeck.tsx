@@ -2,12 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  onSnapshot,
-  orderBy,
-  query,
-} from "firebase/firestore";
+import { collection, onSnapshot, query } from "firebase/firestore";
 import { db } from "@/app/firebase";
 import type { TimelineId, TimelineSpec } from "@/theme/timelines";
 import { TIMELINE_LIST } from "@/theme/timelines";
@@ -17,14 +12,6 @@ type FlipCard = {
   label: string;
   icon?: string;
   text: string;
-};
-
-type ReplyDoc = {
-  id: string;
-  text: string;
-  authorId: string;
-  timelineId: "original" | TimelineId;
-  createdAt?: any;
 };
 
 type SwipeDeckProps = {
@@ -40,6 +27,7 @@ export default function SwipeDeck({
   onVote,
   onReply,
 }: SwipeDeckProps) {
+  // Keep explicit keys so TypeScript is happy and we have stable shape
   const [rewrites, setRewrites] = useState<Record<TimelineId, any>>({
     calm: undefined,
     bridge: undefined,
@@ -48,9 +36,20 @@ export default function SwipeDeck({
     playful: undefined,
   });
 
-  const [replies, setReplies] = useState<ReplyDoc[]>([]);
   const [index, setIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
+
+  // NEW: local (UI) vote state per card (neutral by default)
+  const [localVotes, setLocalVotes] = useState<
+    Record<"original" | TimelineId, -1 | 1 | null>
+  >({
+    original: null,
+    calm: null,
+    bridge: null,
+    cynical: null,
+    opposite: null,
+    playful: null,
+  });
 
   // Subscribe to rewrites for this post
   useEffect(() => {
@@ -69,33 +68,12 @@ export default function SwipeDeck({
       snap.forEach((docSnap) => {
         const data = docSnap.data() as any;
         const id = data.timelineId as TimelineId;
-        if (id) map[id] = { id, ...data };
+        if (id) {
+          map[id] = { id, ...data };
+        }
       });
 
       setRewrites(map);
-    });
-
-    return () => unsub();
-  }, [post.id]);
-
-  // ✅ Subscribe to replies for this post (single collection)
-  useEffect(() => {
-    const repliesRef = collection(db, "posts", post.id, "replies");
-    const q = query(repliesRef, orderBy("createdAt", "asc"));
-
-    const unsub = onSnapshot(q, (snap) => {
-      const list: ReplyDoc[] = [];
-      snap.forEach((docSnap) => {
-        const data = docSnap.data() as any;
-        list.push({
-          id: docSnap.id,
-          text: data.text,
-          authorId: data.authorId,
-          timelineId: data.timelineId,
-          createdAt: data.createdAt,
-        });
-      });
-      setReplies(list);
     });
 
     return () => unsub();
@@ -109,7 +87,11 @@ export default function SwipeDeck({
   const cards: FlipCard[] = useMemo(() => {
     if (selectedTimeline === "all") {
       const list: FlipCard[] = [
-        { id: "original", label: "Original", text: post.text },
+        {
+          id: "original",
+          label: "Original",
+          text: post.text,
+        },
       ];
 
       TIMELINE_LIST.forEach((t: TimelineSpec) => {
@@ -139,11 +121,6 @@ export default function SwipeDeck({
 
   const current = cards[index] ?? cards[0];
 
-  // ✅ Replies for this card only
-  const currentReplies = useMemo(() => {
-    return replies.filter((r) => r.timelineId === current.id);
-  }, [replies, current.id]);
-
   function handlePrev() {
     setIndex((prev) => (prev > 0 ? prev - 1 : prev));
   }
@@ -167,9 +144,33 @@ export default function SwipeDeck({
         post.sourcePlatform.slice(1)
       : "original post";
 
+  const selectedVote = localVotes[current.id] ?? null;
+
+  function voteBtnClass(isSelected: boolean) {
+    return isSelected
+      ? "px-3 py-1 rounded-full bg-slate-900 text-white"
+      : "px-3 py-1 rounded-full border border-slate-300 text-slate-700 hover:bg-slate-50";
+  }
+
+  async function handleVoteClick(value: 1 | -1) {
+    // Toggle behavior: click same vote again -> clear (optional, but feels good)
+    const next = selectedVote === value ? null : value;
+
+    setLocalVotes((prev) => ({
+      ...prev,
+      [current.id]: next,
+    }));
+
+    // Only write to Firestore when setting a vote (not when clearing)
+    // (If you want “unvote” later, we can implement a votes/{uid} doc pattern.)
+    if (next === null) return;
+
+    await onVote(current.id, next);
+  }
+
   return (
     <div className="space-y-3">
-      {/* Card header with chip & pager */}
+      {/* Card header with chip & simple pager */}
       <div className="flex items-center justify-between mb-1">
         <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
           <span className="text-[11px] font-medium text-slate-700">
@@ -203,7 +204,7 @@ export default function SwipeDeck({
         )}
       </div>
 
-      {/* Source line */}
+      {/* Source line – directly under the header, on ALL versions when we have a link */}
       {hasSource && (
         <div className="mt-1 text-[11px] text-slate-500">
           <span>This Flip was originally posted on: </span>
@@ -224,45 +225,29 @@ export default function SwipeDeck({
         {current.text}
       </div>
 
-      {/* Votes */}
+      {/* Actions: vote + reply */}
       <div className="flex items-center justify-between text-[11px]">
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => onVote(current.id, 1)}
-            className="px-3 py-1 rounded-full bg-slate-900 text-white"
+            onClick={() => handleVoteClick(1)}
+            className={voteBtnClass(selectedVote === 1)}
+            aria-pressed={selectedVote === 1}
           >
             👍
           </button>
+
           <button
             type="button"
-            onClick={() => onVote(current.id, -1)}
-            className="px-3 py-1 rounded-full border border-slate-300 text-slate-700"
+            onClick={() => handleVoteClick(-1)}
+            className={voteBtnClass(selectedVote === -1)}
+            aria-pressed={selectedVote === -1}
           >
             👎
           </button>
         </div>
       </div>
 
-      {/* ✅ Replies list for this card */}
-      <div className="space-y-2">
-        {currentReplies.length > 0 && (
-          <div className="text-[10px] text-slate-500">
-            Replies ({currentReplies.length})
-          </div>
-        )}
-
-        {currentReplies.map((r) => (
-          <div
-            key={r.id}
-            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
-          >
-            {r.text}
-          </div>
-        ))}
-      </div>
-
-      {/* Reply input */}
       <div className="flex items-center gap-2 text-[11px]">
         <input
           type="text"
