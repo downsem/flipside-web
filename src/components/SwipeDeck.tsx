@@ -2,8 +2,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query } from "firebase/firestore";
-import { db } from "@/app/firebase";
+import {
+  collection,
+  onSnapshot,
+  query,
+  orderBy,
+  type Timestamp,
+} from "firebase/firestore";
+import { db, auth } from "@/app/firebase";
 import type { TimelineId, TimelineSpec } from "@/theme/timelines";
 import { TIMELINE_LIST } from "@/theme/timelines";
 
@@ -12,6 +18,13 @@ type FlipCard = {
   label: string;
   icon?: string;
   text: string;
+};
+
+type Reply = {
+  id: string;
+  text: string;
+  authorId?: string;
+  createdAt?: Timestamp | any;
 };
 
 type SwipeDeckProps = {
@@ -39,6 +52,9 @@ export default function SwipeDeck({
   const [index, setIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
 
+  // NEW: replies for the currently viewed card
+  const [replies, setReplies] = useState<Reply[]>([]);
+
   // Subscribe to rewrites for this post
   useEffect(() => {
     const rewritesRef = collection(db, "posts", post.id, "rewrites");
@@ -56,9 +72,7 @@ export default function SwipeDeck({
       snap.forEach((docSnap) => {
         const data = docSnap.data() as any;
         const id = data.timelineId as TimelineId;
-        if (id) {
-          map[id] = { id, ...data };
-        }
+        if (id) map[id] = { id, ...data };
       });
 
       setRewrites(map);
@@ -132,6 +146,41 @@ export default function SwipeDeck({
         post.sourcePlatform.slice(1)
       : "original post";
 
+  // NEW: subscribe to replies for the CURRENT card (original vs timeline)
+  useEffect(() => {
+    if (!post?.id || !current?.id) return;
+
+    const repliesRef =
+      current.id === "original"
+        ? collection(db, "posts", post.id, "replies")
+        : collection(db, "posts", post.id, "rewrites", current.id, "replies");
+
+    const q = query(repliesRef, orderBy("createdAt", "asc"));
+
+    const unsub = onSnapshot(q, (snap) => {
+      const list: Reply[] = [];
+      snap.forEach((d) => {
+        list.push({ id: d.id, ...(d.data() as any) });
+      });
+      setReplies(list);
+    });
+
+    return () => unsub();
+  }, [post.id, current.id]);
+
+  const me = auth.currentUser?.uid;
+
+  function formatTs(ts: any) {
+    try {
+      if (!ts) return "";
+      // Firestore Timestamp has .toDate()
+      const d = typeof ts?.toDate === "function" ? ts.toDate() : new Date(ts);
+      return d.toLocaleString();
+    } catch {
+      return "";
+    }
+  }
+
   return (
     <div className="space-y-3">
       {/* Card header with chip & simple pager */}
@@ -142,6 +191,7 @@ export default function SwipeDeck({
             {current.label}
           </span>
         </div>
+
         {cards.length > 1 && (
           <div className="flex items-center gap-2 text-[11px] text-slate-500">
             <button
@@ -188,26 +238,27 @@ export default function SwipeDeck({
         {current.text}
       </div>
 
-      {/* Actions: vote + reply */}
+      {/* Actions: vote */}
       <div className="flex items-center justify-between text-[11px]">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => onVote(current.id, 1)}
-            className="px-3 py-1 rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            className="px-3 py-1 rounded-full bg-slate-900 text-white"
           >
             👍
           </button>
           <button
             type="button"
             onClick={() => onVote(current.id, -1)}
-            className="px-3 py-1 rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            className="px-3 py-1 rounded-full border border-slate-300 text-slate-700"
           >
             👎
           </button>
         </div>
       </div>
 
+      {/* Reply input */}
       <div className="flex items-center gap-2 text-[11px]">
         <input
           type="text"
@@ -223,6 +274,31 @@ export default function SwipeDeck({
         >
           Reply
         </button>
+      </div>
+
+      {/* NEW: Replies list */}
+      <div className="space-y-2">
+        {replies.length > 0 && (
+          <div className="text-[11px] text-slate-500">
+            Replies ({replies.length})
+          </div>
+        )}
+
+        {replies.map((r) => (
+          <div
+            key={r.id}
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-2"
+          >
+            <div className="text-[10px] text-slate-500 flex items-center gap-2">
+              <span>{r.authorId === me ? "You" : "User"}</span>
+              <span>•</span>
+              <span>{formatTs(r.createdAt)}</span>
+            </div>
+            <div className="text-xs text-slate-900 whitespace-pre-wrap">
+              {r.text}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
