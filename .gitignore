@@ -1,6 +1,16 @@
+# Internal prototypes (do not commit)
+src/app/prototype/
+src/prototype/
+src/components/PeopleDeckSwipe.tsx
+src/components/PrototypeDeckCard.tsx
 node_modules/
+# Firebase / Admin SDK secrets
+scripts/secrets/
+serviceAccount*.json
+firebase-admin*.json
 .next/
 .vercel/
 .env
 .env.*
 .vercel
+scripts/secrets/

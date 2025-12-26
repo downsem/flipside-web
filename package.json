@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "firebase": "^10.12.2",
+    "firebase-admin": "^13.6.0",
     "framer-motion": "^12.23.24",
     "next": "14.2.5",
     "openai": "^6.9.1",
@@ -18,7 +19,8 @@
     "react-dom": "18.3.1",
     "react-firebase-hooks": "^5.1.1",
     "strip-ansi": "7.1.0",
-    "vercel": "^48.2.6"
+    "vercel": "^48.2.6",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@types/node": "^20",
