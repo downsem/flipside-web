@@ -1,3 +1,4 @@
+// src/components/PostCard.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -73,7 +74,6 @@ export default function PostCard({ post, selectedTimeline }: PostCardProps) {
     await recordLensStat(user.uid, timelineId, value);
   }
 
-  // ✅ Option A: ALL replies live in posts/{postId}/replies and are tagged by timelineId
   async function handleReply(
     timelineId: "original" | TimelineId,
     text: string
@@ -83,63 +83,22 @@ export default function PostCard({ post, selectedTimeline }: PostCardProps) {
       return;
     }
 
-    const repliesCol = collection(db, "posts", post.id, "replies");
+    const path =
+      timelineId === "original"
+        ? collection(db, "posts", post.id, "replies")
+        : collection(db, "posts", post.id, "rewrites", timelineId, "replies");
 
-    await addDoc(repliesCol, {
+    await addDoc(path, {
       text,
-      timelineId, // "original" | "calm" | ...
       authorId: user.uid,
       createdAt: serverTimestamp(),
     });
-
-    // Optional: keep a simple counter on the post doc (total replies across all cards)
-    // If you later want per-card counts, we can add separate fields.
-    try {
-      await updateDoc(doc(db, "posts", post.id), {
-        replyCount: increment(1),
-      });
-    } catch (e) {
-      // Non-fatal for MVP
-      console.warn("Could not increment replyCount:", e);
-    }
   }
 
   async function handleDelete() {
     if (!user || user.uid !== post.authorId) return;
-
     if (!confirm("Delete this flip? This cannot be undone.")) return;
-
     await deleteDoc(doc(db, "posts", post.id));
-  }
-
-  async function handleShare() {
-    const baseText = post.text || "";
-    const shareText = `${baseText}\n\nSee this post through five lenses on Flipside.`;
-
-    if (typeof navigator !== "undefined" && (navigator as any).share) {
-      try {
-        await (navigator as any).share({
-          text: shareText,
-          url: window.location.origin,
-          title: "Flipside",
-        });
-        return;
-      } catch (e) {
-        console.error("Share cancelled or failed:", e);
-      }
-    }
-
-    if (navigator.clipboard) {
-      try {
-        await navigator.clipboard.writeText(shareText);
-        alert("Copied flip text to clipboard. You can paste it anywhere to share.");
-        return;
-      } catch (e) {
-        console.error("Clipboard failed:", e);
-      }
-    }
-
-    alert("Sharing is not supported in this browser. You can copy the text manually.");
   }
 
   return (
@@ -160,9 +119,7 @@ export default function PostCard({ post, selectedTimeline }: PostCardProps) {
             <span className="font-medium text-sm">
               {author?.displayName || "Loading…"}
             </span>
-            <span className="text-xs text-slate-500">
-              {author?.email || ""}
-            </span>
+            <span className="text-xs text-slate-500">{author?.email || ""}</span>
           </div>
         </div>
 
@@ -174,15 +131,6 @@ export default function PostCard({ post, selectedTimeline }: PostCardProps) {
             Delete
           </button>
         )}
-      </div>
-
-      <div className="flex justify-end mb-2">
-        <button
-          onClick={handleShare}
-          className="text-[11px] px-2 py-1 rounded-full border border-slate-300 text-slate-600 hover:bg-slate-50"
-        >
-          Share
-        </button>
       </div>
 
       <SwipeDeck

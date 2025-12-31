@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { collection, onSnapshot, query } from "firebase/firestore";
 import { db } from "@/app/firebase";
 import type { TimelineId, TimelineSpec } from "@/theme/timelines";
@@ -27,7 +28,6 @@ export default function SwipeDeck({
   onVote,
   onReply,
 }: SwipeDeckProps) {
-  // Keep explicit keys so TypeScript is happy and we have stable shape
   const [rewrites, setRewrites] = useState<Record<TimelineId, any>>({
     calm: undefined,
     bridge: undefined,
@@ -39,19 +39,6 @@ export default function SwipeDeck({
   const [index, setIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
 
-  // NEW: local (UI) vote state per card (neutral by default)
-  const [localVotes, setLocalVotes] = useState<
-    Record<"original" | TimelineId, -1 | 1 | null>
-  >({
-    original: null,
-    calm: null,
-    bridge: null,
-    cynical: null,
-    opposite: null,
-    playful: null,
-  });
-
-  // Subscribe to rewrites for this post
   useEffect(() => {
     const rewritesRef = collection(db, "posts", post.id, "rewrites");
     const q = query(rewritesRef);
@@ -68,9 +55,7 @@ export default function SwipeDeck({
       snap.forEach((docSnap) => {
         const data = docSnap.data() as any;
         const id = data.timelineId as TimelineId;
-        if (id) {
-          map[id] = { id, ...data };
-        }
+        if (id) map[id] = { id, ...data };
       });
 
       setRewrites(map);
@@ -79,7 +64,6 @@ export default function SwipeDeck({
     return () => unsub();
   }, [post.id]);
 
-  // Reset card index when filter changes
   useEffect(() => {
     setIndex(0);
   }, [selectedTimeline]);
@@ -87,11 +71,7 @@ export default function SwipeDeck({
   const cards: FlipCard[] = useMemo(() => {
     if (selectedTimeline === "all") {
       const list: FlipCard[] = [
-        {
-          id: "original",
-          label: "Original",
-          text: post.text,
-        },
+        { id: "original", label: "Original", text: post.text },
       ];
 
       TIMELINE_LIST.forEach((t: TimelineSpec) => {
@@ -105,18 +85,18 @@ export default function SwipeDeck({
       });
 
       return list;
-    } else {
-      const t = TIMELINE_LIST.find((tl) => tl.id === selectedTimeline)!;
-      const rw = rewrites[t.id];
-      return [
-        {
-          id: t.id,
-          label: t.label,
-          icon: t.icon,
-          text: rw?.text || "(Generating rewrite…)",
-        },
-      ];
     }
+
+    const t = TIMELINE_LIST.find((tl) => tl.id === selectedTimeline)!;
+    const rw = rewrites[t.id];
+    return [
+      {
+        id: t.id,
+        label: t.label,
+        icon: t.icon,
+        text: rw?.text || "(Generating rewrite…)",
+      },
+    ];
   }, [post.text, rewrites, selectedTimeline]);
 
   const current = cards[index] ?? cards[0];
@@ -136,7 +116,6 @@ export default function SwipeDeck({
     setReplyText("");
   }
 
-  // --- Source attribution line (shown on ALL cards when a link exists) ---
   const hasSource = !!post?.sourceUrl;
   const sourceLabel =
     post?.sourcePlatform && post.sourcePlatform !== "other"
@@ -144,33 +123,12 @@ export default function SwipeDeck({
         post.sourcePlatform.slice(1)
       : "original post";
 
-  const selectedVote = localVotes[current.id] ?? null;
-
-  function voteBtnClass(isSelected: boolean) {
-    return isSelected
-      ? "px-3 py-1 rounded-full bg-slate-900 text-white"
-      : "px-3 py-1 rounded-full border border-slate-300 text-slate-700 hover:bg-slate-50";
-  }
-
-  async function handleVoteClick(value: 1 | -1) {
-    // Toggle behavior: click same vote again -> clear (optional, but feels good)
-    const next = selectedVote === value ? null : value;
-
-    setLocalVotes((prev) => ({
-      ...prev,
-      [current.id]: next,
-    }));
-
-    // Only write to Firestore when setting a vote (not when clearing)
-    // (If you want “unvote” later, we can implement a votes/{uid} doc pattern.)
-    if (next === null) return;
-
-    await onVote(current.id, next);
-  }
+  // Share URL for the CURRENT card (lens-specific)
+  const shareHref = `/share/${post.id}?lens=${encodeURIComponent(current.id)}`;
 
   return (
     <div className="space-y-3">
-      {/* Card header with chip & simple pager */}
+      {/* Header row */}
       <div className="flex items-center justify-between mb-1">
         <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
           <span className="text-[11px] font-medium text-slate-700">
@@ -179,32 +137,41 @@ export default function SwipeDeck({
           </span>
         </div>
 
-        {cards.length > 1 && (
-          <div className="flex items-center gap-2 text-[11px] text-slate-500">
-            <button
-              type="button"
-              onClick={handlePrev}
-              disabled={index === 0}
-              className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
-            >
-              ‹
-            </button>
-            <span>
-              {index + 1}/{cards.length}
-            </span>
-            <button
-              type="button"
-              onClick={handleNext}
-              disabled={index === cards.length - 1}
-              className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
-            >
-              ›
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <Link
+            href={shareHref}
+            className="text-[11px] px-3 py-1 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
+          >
+            Share lens
+          </Link>
+
+          {cards.length > 1 && (
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <button
+                type="button"
+                onClick={handlePrev}
+                disabled={index === 0}
+                className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
+              >
+                ‹
+              </button>
+              <span>
+                {index + 1}/{cards.length}
+              </span>
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={index === cards.length - 1}
+                className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
+              >
+                ›
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Source line – directly under the header, on ALL versions when we have a link */}
+      {/* Attribution line */}
       {hasSource && (
         <div className="mt-1 text-[11px] text-slate-500">
           <span>This Flip was originally posted on: </span>
@@ -225,29 +192,27 @@ export default function SwipeDeck({
         {current.text}
       </div>
 
-      {/* Actions: vote + reply */}
+      {/* Actions */}
       <div className="flex items-center justify-between text-[11px]">
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => handleVoteClick(1)}
-            className={voteBtnClass(selectedVote === 1)}
-            aria-pressed={selectedVote === 1}
+            onClick={() => onVote(current.id, 1)}
+            className="px-3 py-1 rounded-full bg-slate-900 text-white"
           >
             👍
           </button>
-
           <button
             type="button"
-            onClick={() => handleVoteClick(-1)}
-            className={voteBtnClass(selectedVote === -1)}
-            aria-pressed={selectedVote === -1}
+            onClick={() => onVote(current.id, -1)}
+            className="px-3 py-1 rounded-full border border-slate-300 text-slate-700"
           >
             👎
           </button>
         </div>
       </div>
 
+      {/* Reply */}
       <div className="flex items-center gap-2 text-[11px]">
         <input
           type="text"
