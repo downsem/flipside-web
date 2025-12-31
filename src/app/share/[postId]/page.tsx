@@ -1,5 +1,5 @@
 // src/app/share/[postId]/page.tsx
-import SharePageClient from "./page.client.tsx";
+import SharePageClient from "./page.client";
 
 export default function SharePage({
   params,
