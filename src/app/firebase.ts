@@ -7,6 +7,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
+  signInAnonymously,
+  linkWithPopup,
 } from "firebase/auth";
 import type { User } from "firebase/auth";
 import {
@@ -48,7 +50,7 @@ export async function ensureUserProfile(user: User | null | undefined) {
       email: user.email ?? "",
       photoURL: user.photoURL ?? "",
       updatedAt: serverTimestamp(),
-      // createdAt will only be set the first time due to merge:true
+      // createdAt will only be set the first time due to merge:true (fine for MVP)
       createdAt: serverTimestamp(),
     },
     { merge: true }
@@ -59,6 +61,34 @@ export async function ensureUserProfile(user: User | null | undefined) {
 export async function loginWithGoogle() {
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(auth, provider);
+  await ensureUserProfile(result.user);
+  return result.user;
+}
+
+// --- NEW: Anonymous sign-in (for frictionless MVP) ---
+export async function loginAnonymously() {
+  const result = await signInAnonymously(auth);
+  await ensureUserProfile(result.user);
+  return result.user;
+}
+
+// --- NEW: Upgrade anonymous user to Google (keeps same uid by linking) ---
+export async function upgradeAnonymousWithGoogle() {
+  const provider = new GoogleAuthProvider();
+
+  const current = auth.currentUser;
+  if (!current) {
+    // If nobody is signed in, just do normal Google login.
+    return await loginWithGoogle();
+  }
+
+  // If already Google (or non-anon), just sign in with Google normally.
+  if (!current.isAnonymous) {
+    return await loginWithGoogle();
+  }
+
+  // Link Google credentials to the anonymous user (preferred upgrade path)
+  const result = await linkWithPopup(current, provider);
   await ensureUserProfile(result.user);
   return result.user;
 }
