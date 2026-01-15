@@ -49,12 +49,20 @@ export async function ensureUserProfile(user: User | null | undefined) {
       displayName: user.displayName ?? "",
       email: user.email ?? "",
       photoURL: user.photoURL ?? "",
+      isAnonymous: !!user.isAnonymous,
       updatedAt: serverTimestamp(),
-      // createdAt will only be set the first time due to merge:true (fine for MVP)
+      // (merge:true) means this will only be created the first time in practice
       createdAt: serverTimestamp(),
     },
     { merge: true }
   );
+}
+
+// --- Helper: anonymous login (silent) ---
+export async function loginAnonymously() {
+  const result = await signInAnonymously(auth);
+  await ensureUserProfile(result.user);
+  return result.user;
 }
 
 // --- Helper: Google sign-in + profile bootstrap ---
@@ -65,32 +73,19 @@ export async function loginWithGoogle() {
   return result.user;
 }
 
-// --- NEW: Anonymous sign-in (for frictionless MVP) ---
-export async function loginAnonymously() {
-  const result = await signInAnonymously(auth);
-  await ensureUserProfile(result.user);
-  return result.user;
-}
-
-// --- NEW: Upgrade anonymous user to Google (keeps same uid by linking) ---
+// --- Helper: upgrade an anonymous session to Google (link accounts) ---
 export async function upgradeAnonymousWithGoogle() {
   const provider = new GoogleAuthProvider();
 
-  const current = auth.currentUser;
-  if (!current) {
-    // If nobody is signed in, just do normal Google login.
-    return await loginWithGoogle();
+  // If we have an anonymous user, link it so their flips stay attached
+  if (auth.currentUser?.isAnonymous) {
+    const result = await linkWithPopup(auth.currentUser, provider);
+    await ensureUserProfile(result.user);
+    return result.user;
   }
 
-  // If already Google (or non-anon), just sign in with Google normally.
-  if (!current.isAnonymous) {
-    return await loginWithGoogle();
-  }
-
-  // Link Google credentials to the anonymous user (preferred upgrade path)
-  const result = await linkWithPopup(current, provider);
-  await ensureUserProfile(result.user);
-  return result.user;
+  // Otherwise normal sign-in
+  return loginWithGoogle();
 }
 
 // --- Helper: logout ---
