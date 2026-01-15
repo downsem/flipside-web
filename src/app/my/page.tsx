@@ -55,7 +55,7 @@ export default function MyFlipsPage() {
   if (!user) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
-        <Link href="/" className="mb-4 text-sm underline">
+        <Link href="/feed" className="mb-4 text-sm underline">
           ← Back to feed
         </Link>
         <h1 className="text-xl font-semibold mb-2">My Flips</h1>
@@ -81,7 +81,7 @@ export default function MyFlipsPage() {
             Only posts you&apos;ve created with this account.
           </p>
         </div>
-        <Link href="/" className="text-xs underline text-slate-700">
+        <Link href="/feed" className="text-xs underline text-slate-700">
           ← Back to feed
         </Link>
       </header>

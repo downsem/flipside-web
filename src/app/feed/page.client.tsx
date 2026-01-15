@@ -87,7 +87,7 @@ export default function HomePageClient() {
 
           {/* CHANGED: always go to /add (even when signed out) */}
           <Link
-            href="/add"
+            href="/"
             className="inline-flex items-center justify-center rounded-full bg-blue-600 px-3 py-1 text-[11px] font-medium text-white shadow-sm"
           >
             Add Flip

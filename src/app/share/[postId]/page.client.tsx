@@ -134,7 +134,7 @@ export default function SharePageClient({ postId }: { postId: string }) {
             This share link is invalid (post missing or deleted).
           </p>
           <div className="mt-3">
-            <Link href="/" className="text-xs underline text-slate-800">
+            <Link href="/feed" className="text-xs underline text-slate-800">
               Back to feed
             </Link>
           </div>
@@ -162,7 +162,7 @@ export default function SharePageClient({ postId }: { postId: string }) {
         </div>
 
         <Link
-          href="/"
+          href="/feed"
           className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-800 shadow-sm"
         >
           Back to feed

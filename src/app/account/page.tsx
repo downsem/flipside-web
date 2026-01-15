@@ -14,7 +14,7 @@ export default function AccountPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center py-16 px-4">
-      <Link href="/" className="mb-6 text-sm underline">
+      <Link href="/feed" className="mb-6 text-sm underline">
         ← Back to feed
       </Link>
 

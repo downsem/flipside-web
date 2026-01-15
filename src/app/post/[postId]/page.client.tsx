@@ -58,7 +58,7 @@ export default function PostPageClient({ postId }: { postId: string }) {
         </div>
 
         <Link
-          href="/"
+          href="/feed"
           className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-800 shadow-sm"
         >
           Back to feed
@@ -81,7 +81,7 @@ export default function PostPageClient({ postId }: { postId: string }) {
             </p>
             <div className="mt-3">
               <Link
-                href="/"
+                href="/feed"
                 className="text-xs underline text-slate-800"
               >
                 Back to feed

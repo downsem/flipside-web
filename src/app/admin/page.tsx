@@ -136,7 +136,7 @@ export default function AdminDashboardPage() {
   if (!user) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
-        <Link href="/" className="mb-4 text-sm underline">
+        <Link href="/feed" className="mb-4 text-sm underline">
           ← Back to feed
         </Link>
         <h1 className="text-xl font-semibold mb-2">Admin Dashboard</h1>
@@ -156,7 +156,7 @@ export default function AdminDashboardPage() {
   if (isAdmin === false) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
-        <Link href="/" className="mb-4 text-sm underline">
+        <Link href="/feed" className="mb-4 text-sm underline">
           ← Back to feed
         </Link>
         <h1 className="text-xl font-semibold mb-2">Admin Dashboard</h1>
@@ -185,7 +185,7 @@ export default function AdminDashboardPage() {
             Internal view of Flipside activity and usage.
           </p>
         </div>
-        <Link href="/" className="text-xs underline text-slate-700">
+        <Link href="/feed" className="text-xs underline text-slate-700">
           ← Back to feed
         </Link>
       </header>
