@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
-import { auth, db } from "./firebase";
+import { auth, db } from "@/app/firebase";
 import PostCard from "@/components/PostCard";
 import type { TimelineId } from "@/theme/timelines";
 
 type Post = any;
 type Filter = "all" | TimelineId;
 
-export default function HomePageClient() {
+export default function FeedPageClient() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [user, setUser] = useState<any>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -26,7 +26,7 @@ export default function HomePageClient() {
 
     const unsub = onSnapshot(q, (snap) => {
       const docs: Post[] = [];
-      snap.forEach((doc) => docs.push({ id: doc.id, ...doc.data() }));
+      snap.forEach((d) => docs.push({ id: d.id, ...d.data() }));
       setPosts(docs);
     });
 
@@ -85,9 +85,8 @@ export default function HomePageClient() {
             </Link>
           )}
 
-          {/* CHANGED: always go to /add (even when signed out) */}
           <Link
-            href="/"
+            href={user ? "/add" : "/account"}
             className="inline-flex items-center justify-center rounded-full bg-blue-600 px-3 py-1 text-[11px] font-medium text-white shadow-sm"
           >
             Add Flip

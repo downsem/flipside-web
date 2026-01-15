@@ -135,7 +135,7 @@ export default function AddPage() {
           </div>
 
           <Link
-            href="/feed"
+            href="/"
             className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-[12px] font-medium text-white shadow-sm"
           >
             Explore more flips →
@@ -145,10 +145,10 @@ export default function AddPage() {
         {/* Hero copy (tight on mobile) */}
         <div className="mb-4">
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900 leading-[1.05]">
-            There’s another side to every post
+            There’s another side to see every post
           </h1>
           <p className="mt-2 text-[13px] sm:text-sm text-slate-600 max-w-xl">
-            Drop in a post below and Flipside will show you some alternative angles
+            Drop in post below and Flipside will show you some alternative angles
           </p>
         </div>
 

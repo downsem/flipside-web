@@ -1,7 +1,7 @@
-import HomePageClient from "./page.client";
+import FeedPageClient from "./page.client";
 
 export const revalidate = 0;
 
-export default function Home() {
-  return <HomePageClient />;
+export default function FeedPage() {
+  return <FeedPageClient />;
 }
