@@ -145,10 +145,10 @@ export default function AddPage() {
         {/* Hero copy (tight on mobile) */}
         <div className="mb-4">
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900 leading-[1.05]">
-            There’s another side to see every post
+            There’s another side to every post
           </h1>
           <p className="mt-2 text-[13px] sm:text-sm text-slate-600 max-w-xl">
-            Drop in post below and Flipside will show you some alternative angles
+            Drop in a post below and Flipside will show you some alternative angles
           </p>
         </div>
 
