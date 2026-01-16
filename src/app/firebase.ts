@@ -49,19 +49,19 @@ export async function ensureUserProfile(user: User | null | undefined) {
       displayName: user.displayName ?? "",
       email: user.email ?? "",
       photoURL: user.photoURL ?? "",
-      isAnonymous: !!user.isAnonymous,
       updatedAt: serverTimestamp(),
-      // (merge:true) means this will only be created the first time in practice
+      // createdAt will only be set the first time due to merge:true
       createdAt: serverTimestamp(),
     },
     { merge: true }
   );
 }
 
-// --- Helper: anonymous login (silent) ---
+// --- Helper: anonymous sign-in (for “try without signing in”) ---
 export async function loginAnonymously() {
   const result = await signInAnonymously(auth);
-  await ensureUserProfile(result.user);
+  // Don’t create a profile doc for anonymous users by default
+  // (keeps Firestore cleaner; posts can still reference authorId)
   return result.user;
 }
 
@@ -73,19 +73,23 @@ export async function loginWithGoogle() {
   return result.user;
 }
 
-// --- Helper: upgrade an anonymous session to Google (link accounts) ---
+// --- Helper: upgrade/link anonymous user to Google (keeps their flips) ---
 export async function upgradeAnonymousWithGoogle() {
-  const provider = new GoogleAuthProvider();
-
-  // If we have an anonymous user, link it so their flips stay attached
-  if (auth.currentUser?.isAnonymous) {
-    const result = await linkWithPopup(auth.currentUser, provider);
-    await ensureUserProfile(result.user);
-    return result.user;
+  const current = auth.currentUser;
+  if (!current) {
+    // If somehow no user exists, just do normal login
+    return await loginWithGoogle();
   }
 
-  // Otherwise normal sign-in
-  return loginWithGoogle();
+  const provider = new GoogleAuthProvider();
+
+  // If already a non-anonymous user, this will still work as a sign-in popup
+  // but generally you'd call loginWithGoogle instead in that case.
+  const result = await linkWithPopup(current, provider);
+
+  // Now that they're “real”, create/update their user profile doc
+  await ensureUserProfile(result.user);
+  return result.user;
 }
 
 // --- Helper: logout ---

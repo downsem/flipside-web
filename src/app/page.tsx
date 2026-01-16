@@ -1,12 +1,21 @@
+// src/app/page.tsx
 "use client";
 
-import { useState, type FormEvent, type ChangeEvent } from "react";
+import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { auth, db, serverTs, ensureUserProfile } from "./firebase";
+import {
+  auth,
+  db,
+  serverTs,
+  ensureUserProfile,
+  loginAnonymously,
+} from "./firebase";
 import { collection, doc, setDoc } from "firebase/firestore";
 
 type SourceType = "original" | "import-self" | "import-other";
+
+type SourcePlatform = "x" | "threads" | "bluesky" | "truth" | "reddit" | "other";
 
 export default function AddPage() {
   const [text, setText] = useState("");
@@ -15,73 +24,71 @@ export default function AddPage() {
 
   const [sourceType, setSourceType] = useState<SourceType>("original");
 
-  // NEW: URL for "someone else's public post"
-  const [sourceUrl, setSourceUrl] = useState("");
+  // NEW: stable auth state (avoids auth.currentUser flicker on first paint)
+  const [user, setUser] = useState<any>(null);
 
   const router = useRouter();
-  const isSignedIn = !!auth.currentUser;
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((u) => setUser(u));
+    return () => unsub();
+  }, []);
 
   function handleSourceTypeChange(e: ChangeEvent<HTMLInputElement>) {
-    const next = e.target.value as SourceType;
-    setSourceType(next);
-
-    // Keep things tidy: if they switch away from "import-other", clear URL
-    if (next !== "import-other") {
-      setSourceUrl("");
-    }
+    setSourceType(e.target.value as SourceType);
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!text.trim() || busy) return;
 
-    // If "import-other" is selected, require a URL
-    if (sourceType === "import-other" && !sourceUrl.trim()) {
-      setError("Please paste a link to the original post.");
-      return;
-    }
-
     setBusy(true);
     setError(null);
 
     try {
-      const user = auth.currentUser;
+      // NEW: ensure we always have *some* Firebase user (anonymous is fine)
+      let u = auth.currentUser;
+      if (!u) {
+        u = await loginAnonymously();
+        setUser(u);
+      }
 
-      // If signed in, persist post
-      if (user) {
-        await ensureUserProfile(user);
+      // If user is NOT anonymous, ensure profile doc exists (Google sign-in)
+      if (u && !u.isAnonymous) {
+        await ensureUserProfile(u);
+      }
 
-        const postsCol = collection(db, "posts");
-        const postRef = doc(postsCol);
+      // Always persist post so we have a postId for Firestore rewrites + feed UX
+      const postsCol = collection(db, "posts");
+      const postRef = doc(postsCol);
 
-        await setDoc(postRef, {
-          id: postRef.id,
+      await setDoc(postRef, {
+        id: postRef.id,
+        text: text.trim(),
+        authorId: u?.uid ?? null,
+        createdAt: serverTs(),
+        votes: 0,
+        replyCount: 0,
+        sourceType,
+        // Optional: helps you filter later if you want
+        authorIsAnonymous: !!u?.isAnonymous,
+      });
+
+      // Always call API with postId + text so rewrites get written to Firestore
+      const res = await fetch("/api/flip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          postId: postRef.id,
           text: text.trim(),
-          authorId: user.uid,
-          createdAt: serverTs(),
-          votes: 0,
-          replyCount: 0,
-          sourceType,
-          sourceUrl: sourceType === "import-other" ? sourceUrl.trim() : null,
-        });
+        }),
+      });
 
-        await fetch("/api/flip", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            postId: postRef.id,
-            text: text.trim(),
-          }),
-        });
-      } else {
-        // Anonymous preview flow (no persistence)
-        await fetch("/api/flip", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: text.trim(),
-          }),
-        });
+      if (!res.ok) {
+        console.error("Error generating rewrites", await res.text());
+        setError("Something went wrong creating your flip. Please try again.");
+        setBusy(false);
+        return;
       }
 
       router.push("/feed");
@@ -92,10 +99,10 @@ export default function AddPage() {
     }
   }
 
-  const canSubmit =
-    text.trim().length > 0 &&
-    !busy &&
-    (sourceType !== "import-other" || sourceUrl.trim().length > 0);
+  const canSubmit = text.trim().length > 0 && !busy;
+
+  // Show sign-in CTA if not signed in OR signed in anonymously
+  const showSignInBox = !user || !!user?.isAnonymous;
 
   return (
     <div className="min-h-screen flex justify-center px-4 py-6">
@@ -111,7 +118,6 @@ export default function AddPage() {
             </Link>
           </div>
 
-          {/* NEW subheader */}
           <p className="text-sm text-slate-500">Find new sides to every post</p>
         </header>
 
@@ -151,20 +157,6 @@ export default function AddPage() {
                 <span>Someone else&apos;s public post</span>
               </label>
             </div>
-
-            {/* NEW: URL input appears ONLY for "import-other" */}
-            {sourceType === "import-other" && (
-              <div className="pt-2">
-                <input
-                  type="url"
-                  value={sourceUrl}
-                  onChange={(e) => setSourceUrl(e.target.value)}
-                  placeholder="Paste the link to the original post here…"
-                  disabled={busy}
-                  className="w-full rounded-full border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                />
-              </div>
-            )}
           </div>
 
           {/* Text input */}
@@ -188,8 +180,8 @@ export default function AddPage() {
             Generate Flip
           </button>
 
-          {/* NEW sign-up blurb */}
-          {!isSignedIn && (
+          {/* Sign-in CTA */}
+          {showSignInBox && (
             <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
               <span className="text-slate-600">
                 You can try Flipside without signing in.
