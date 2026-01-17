@@ -15,16 +15,15 @@ import { collection, doc, setDoc } from "firebase/firestore";
 
 type SourceType = "original" | "import-self" | "import-other";
 
-type SourcePlatform = "x" | "threads" | "bluesky" | "truth" | "reddit" | "other";
-
 export default function AddPage() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [sourceType, setSourceType] = useState<SourceType>("original");
+  const [sourceUrl, setSourceUrl] = useState("");
 
-  // NEW: stable auth state (avoids auth.currentUser flicker on first paint)
+  // Stable auth state (avoids auth.currentUser flicker on first paint)
   const [user, setUser] = useState<any>(null);
 
   const router = useRouter();
@@ -35,7 +34,11 @@ export default function AddPage() {
   }, []);
 
   function handleSourceTypeChange(e: ChangeEvent<HTMLInputElement>) {
-    setSourceType(e.target.value as SourceType);
+    const next = e.target.value as SourceType;
+    setSourceType(next);
+
+    // If they switch back to original, clear the link
+    if (next === "original") setSourceUrl("");
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -46,7 +49,7 @@ export default function AddPage() {
     setError(null);
 
     try {
-      // NEW: ensure we always have *some* Firebase user (anonymous is fine)
+      // Ensure we always have *some* Firebase user (anonymous is fine)
       let u = auth.currentUser;
       if (!u) {
         u = await loginAnonymously();
@@ -58,9 +61,11 @@ export default function AddPage() {
         await ensureUserProfile(u);
       }
 
-      // Always persist post so we have a postId for Firestore rewrites + feed UX
       const postsCol = collection(db, "posts");
       const postRef = doc(postsCol);
+
+      const isImported = sourceType !== "original";
+      const cleanedUrl = sourceUrl.trim();
 
       await setDoc(postRef, {
         id: postRef.id,
@@ -70,7 +75,7 @@ export default function AddPage() {
         votes: 0,
         replyCount: 0,
         sourceType,
-        // Optional: helps you filter later if you want
+        sourceUrl: isImported && cleanedUrl ? cleanedUrl : null,
         authorIsAnonymous: !!u?.isAnonymous,
       });
 
@@ -104,6 +109,8 @@ export default function AddPage() {
   // Show sign-in CTA if not signed in OR signed in anonymously
   const showSignInBox = !user || !!user?.isAnonymous;
 
+  const showUrlBox = sourceType !== "original";
+
   return (
     <div className="min-h-screen flex justify-center px-4 py-6">
       <div className="w-full max-w-xl space-y-4">
@@ -136,6 +143,7 @@ export default function AddPage() {
                 />
                 <span>Original thought or post</span>
               </label>
+
               <label className="inline-flex items-center gap-2">
                 <input
                   type="radio"
@@ -146,6 +154,7 @@ export default function AddPage() {
                 />
                 <span>My post from another platform</span>
               </label>
+
               <label className="inline-flex items-center gap-2">
                 <input
                   type="radio"
@@ -157,6 +166,20 @@ export default function AddPage() {
                 <span>Someone else&apos;s public post</span>
               </label>
             </div>
+
+            {/* URL box (no helper text) */}
+            {showUrlBox && (
+              <div className="pt-2">
+                <input
+                  type="url"
+                  placeholder="Original post link (optional)"
+                  className="w-full rounded-full border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  value={sourceUrl}
+                  onChange={(e) => setSourceUrl(e.target.value)}
+                  disabled={busy}
+                />
+              </div>
+            )}
           </div>
 
           {/* Text input */}
