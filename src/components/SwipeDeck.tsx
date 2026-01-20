@@ -22,6 +22,8 @@ type SwipeDeckProps = {
   onReply: (timelineId: "original" | TimelineId, text: string) => void;
 };
 
+type VoteValue = -1 | 0 | 1;
+
 export default function SwipeDeck({
   post,
   selectedTimeline,
@@ -38,6 +40,10 @@ export default function SwipeDeck({
 
   const [index, setIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
+
+  // Local-only vote state per card in this deck (prevents default-selected UI + double-voting)
+  // Keyed by card id: "original" | TimelineId
+  const [localVotes, setLocalVotes] = useState<Record<string, VoteValue>>({});
 
   useEffect(() => {
     const rewritesRef = collection(db, "posts", post.id, "rewrites");
@@ -67,6 +73,11 @@ export default function SwipeDeck({
   useEffect(() => {
     setIndex(0);
   }, [selectedTimeline]);
+
+  // If the post changes, clear local vote UI state (new deck)
+  useEffect(() => {
+    setLocalVotes({});
+  }, [post.id]);
 
   const cards: FlipCard[] = useMemo(() => {
     if (selectedTimeline === "all") {
@@ -100,6 +111,7 @@ export default function SwipeDeck({
   }, [post.text, rewrites, selectedTimeline]);
 
   const current = cards[index] ?? cards[0];
+  const currentVote: VoteValue = (localVotes[current.id] ?? 0) as VoteValue;
 
   function handlePrev() {
     setIndex((prev) => (prev > 0 ? prev - 1 : prev));
@@ -116,6 +128,20 @@ export default function SwipeDeck({
     setReplyText("");
   }
 
+  function handleLocalVoteClick(value: VoteValue) {
+    // Toggle off on second click (UI only, does NOT decrement Firestore)
+    if (currentVote === value) {
+      setLocalVotes((prev) => ({ ...prev, [current.id]: 0 }));
+      return;
+    }
+
+    // Prevent both / prevent changing vote after first selection unless toggled off
+    if (currentVote !== 0) return;
+
+    setLocalVotes((prev) => ({ ...prev, [current.id]: value }));
+    onVote(current.id, value);
+  }
+
   const hasSource = !!post?.sourceUrl;
   const sourceLabel =
     post?.sourcePlatform && post.sourcePlatform !== "other"
@@ -125,6 +151,9 @@ export default function SwipeDeck({
 
   // Share URL for the CURRENT card (lens-specific)
   const shareHref = `/share/${post.id}?lens=${encodeURIComponent(current.id)}`;
+
+  const upSelected = currentVote === 1;
+  const downSelected = currentVote === -1;
 
   return (
     <div className="space-y-3">
@@ -197,15 +226,25 @@ export default function SwipeDeck({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => onVote(current.id, 1)}
-            className="px-3 py-1 rounded-full bg-slate-900 text-white"
+            onClick={() => handleLocalVoteClick(1)}
+            disabled={downSelected} // prevent both
+            className={
+              upSelected
+                ? "px-3 py-1 rounded-full bg-slate-900 text-white"
+                : "px-3 py-1 rounded-full border border-slate-300 text-slate-700"
+            }
           >
             👍
           </button>
           <button
             type="button"
-            onClick={() => onVote(current.id, -1)}
-            className="px-3 py-1 rounded-full border border-slate-300 text-slate-700"
+            onClick={() => handleLocalVoteClick(-1)}
+            disabled={upSelected} // prevent both
+            className={
+              downSelected
+                ? "px-3 py-1 rounded-full bg-slate-900 text-white"
+                : "px-3 py-1 rounded-full border border-slate-300 text-slate-700"
+            }
           >
             👎
           </button>
