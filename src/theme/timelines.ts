@@ -1,3 +1,4 @@
+// src/theme/timelines.ts
 // Central timeline definitions (types + presets)
 
 export type TimelineId = "calm" | "bridge" | "cynical" | "opposite" | "playful";
@@ -39,8 +40,18 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
     label: "Calm-Constructive",
     icon: "🕊",
     prompt:
-      "Rewrite the user’s text so it is calm, non-toxic, and constructive. Preserve the core point, remove hostility and slurs, keep it concise.",
-    colors: { bg: "#B7E2F6", accent: "#F5F9FB", text: "#1E2A32", patternOpacity: 0.06 },
+      "Rewrite the user’s text so it is calm, non-toxic, and constructive.\n" +
+      "Constraints:\n" +
+      "- Keep the core point, remove hostility/insults, no sarcasm.\n" +
+      "- 1–3 short sentences. No emojis, no hashtags.\n" +
+      "- Replace absolutes (always/never) with more precise language.\n" +
+      "- Add one concrete, constructive next step or question (brief).",
+    colors: {
+      bg: "#B7E2F6",
+      accent: "#F5F9FB",
+      text: "#1E2A32",
+      patternOpacity: 0.06,
+    },
     assets: { shapeSvg: "/shapes/calm.svg", pattern: "/patterns/calm.svg" },
     motion: {
       enter: { opacity: 0, scale: 0.98 },
@@ -57,7 +68,12 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
     label: "Balanced-Bridge",
     icon: "⚖️",
     prompt:
-      "Rewrite to acknowledge the original concern AND the other side’s strongest concerns. Aim for a bridge-building tone that suggests a pragmatic compromise.",
+      "Rewrite to acknowledge the original concern AND the other side’s strongest concern.\n" +
+      "Constraints:\n" +
+      "- 2–3 sentences total. No emojis, no hashtags.\n" +
+      "- Sentence 1: state the original concern fairly.\n" +
+      "- Sentence 2: steelman the other side’s best concern.\n" +
+      "- Sentence 3 (optional): propose a pragmatic compromise/shared goal (one concrete idea).",
     colors: { bg: "#C3D9B0", accent: "#F4EBD0", text: "#283028", patternOpacity: 0.08 },
     assets: { shapeSvg: "/shapes/bridge.svg", pattern: "/patterns/bridge.svg" },
     motion: {
@@ -75,7 +91,12 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
     label: "Cynical-Wit",
     icon: "😏",
     prompt:
-      "Rewrite the user’s text with dry humor and sharp skepticism. Keep it concise, clever, and grounded in truth—never cruel, but knowingly ironic.",
+      "Rewrite the user’s text with dry humor and sharp skepticism.\n" +
+      "Constraints:\n" +
+      "- 1–2 sentences. No emojis, no hashtags.\n" +
+      "- Be clever and grounded—aim the skepticism at ideas/claims, not people.\n" +
+      "- Include one crisp, ironic punchline or skeptical twist.\n" +
+      "- Never cruel, no slurs, no dehumanizing language.",
     colors: { bg: "#111111", accent: "#B6FF66", text: "#F8FAFC", patternOpacity: 0.05 },
     assets: { shapeSvg: "/shapes/cynical.svg", pattern: "/patterns/cynical.svg" },
     motion: {
@@ -93,7 +114,12 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
     label: "Opposite-Perspective",
     icon: "↔️",
     prompt:
-      "Write a concise argument that takes the directly opposing conclusion to the user’s text. Don’t straw-man—use the opponent’s best facts and reasoning. No insults.",
+      "Write a concise argument that takes the directly opposing conclusion to the user’s text.\n" +
+      "Constraints:\n" +
+      "- 2–3 sentences. No emojis, no hashtags.\n" +
+      "- Steelman only: use the opponent’s best reasoning; no straw-manning.\n" +
+      "- Use calm, matter-of-fact tone; no insults.\n" +
+      "- Make the opposing conclusion explicit (but keep it respectful).",
     colors: { bg: "#C0392B", accent: "#FFF7F3", text: "#2B1A1A", patternOpacity: 0.06 },
     assets: { shapeSvg: "/shapes/opposite.svg", pattern: "/patterns/opposite.svg" },
     motion: {
@@ -111,7 +137,12 @@ export const TIMELINES: Record<TimelineId, TimelineSpec> = {
     label: "Playful-Satirical",
     icon: "🎈",
     prompt:
-      "Rewrite the user’s text with light satire or absurd humor. Keep the meaning recognizable but exaggerate slightly for comic effect. Fun, not mean.",
+      "Rewrite the user’s text with light satire or absurd humor.\n" +
+      "Constraints:\n" +
+      "- 1–2 sentences. No emojis, no hashtags.\n" +
+      "- Keep meaning recognizable; exaggerate slightly for comic effect.\n" +
+      "- Include one playful metaphor or absurd comparison.\n" +
+      "- Fun, not mean: no mocking individuals or protected groups.",
     colors: { bg: "#D9B3FF", accent: "#FF69B4", text: "#2D0030", patternOpacity: 0.08 },
     assets: { shapeSvg: "/shapes/playful.svg", pattern: "/patterns/playful.svg" },
     motion: {
