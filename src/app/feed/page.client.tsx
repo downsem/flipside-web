@@ -86,6 +86,14 @@ export default function FeedPageClient() {
           )}
 
           <Link
+            href="/people"
+            className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-900 shadow-sm"
+          >
+            <span className="sm:hidden">Tour</span>
+            <span className="hidden sm:inline">Tutorial</span>
+          </Link>
+
+          <Link
             href="/"
             className="inline-flex items-center justify-center rounded-full bg-blue-600 px-3 py-1 text-[11px] font-medium text-white shadow-sm"
           >
