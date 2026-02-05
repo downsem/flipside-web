@@ -1,64 +1,16 @@
 # -----------------------------
-# Dependencies
-# -----------------------------
-node_modules/
-
-# -----------------------------
-# Next.js build output
-# -----------------------------
-.next/
-out/
-dist/
-
-# -----------------------------
-# Environment / secrets (NEVER commit)
-# -----------------------------
-.env
-.env.*
-.vercel/
-scripts/secrets/
-serviceAccount*.json
-firebase-admin*.json
-
-# -----------------------------
-# OS / editor junk
-# -----------------------------
-.DS_Store
-.vscode/
-.idea/
-
-# -----------------------------
-# Logs
-# -----------------------------
-*.log
-
-# -----------------------------
 # Prototype routes (UI-only legacy)
 # -----------------------------
-# Old tutorial / prototype app routes (safe to ignore)
 src/app/prototype/
 
 # -----------------------------
-# Prototype logic (SELECTIVELY ALLOWED)
+# Prototype logic
 # -----------------------------
-# Ignore all prototype logic by default
-src/prototype/
+# Ignore contents of src/prototype by default…
+src/prototype/*
 
-# ✅ Allow People Mode + Rooms (these ARE real)
+# …but allow People + Rooms (these are real)
 !src/prototype/people/
 !src/prototype/people/**
 !src/prototype/rooms/
 !src/prototype/rooms/**
-
-# -----------------------------
-# Components
-# -----------------------------
-# (Do NOT ignore real components anymore)
-# src/components/PeopleDeckSwipe.tsx  ❌ REMOVED
-# src/components/PrototypeDeckCard.tsx ❌ REMOVED
-
-# -----------------------------
-# Archives / temp artifacts
-# -----------------------------
-*.zip
-zips/
