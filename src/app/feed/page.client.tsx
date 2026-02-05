@@ -85,13 +85,13 @@ export default function FeedPageClient() {
             </Link>
           )}
 
-          <Link
-            href="/people"
-            className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-900 shadow-sm"
-          >
-            <span className="sm:hidden">Tour</span>
-            <span className="hidden sm:inline">Tutorial</span>
-          </Link>
+					<Link
+					  href="/prototype/create"
+					  className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-900 shadow-sm"
+					>
+					  <span className="sm:hidden">People</span>
+					  <span className="hidden sm:inline">People Mode</span>
+					</Link>
 
           <Link
             href="/"

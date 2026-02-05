@@ -113,19 +113,17 @@ export default function AddPage() {
 
   return (
     <div className="min-h-screen flex justify-center px-4 py-6">
-      {/* Slightly wider container so the added context text fits
-          without pushing the primary CTA below the fold. */}
-      <div className="w-full max-w-2xl space-y-4">
+      <div className="w-full max-w-xl space-y-4">
         <header className="space-y-1">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-semibold tracking-tight">Add Flip</h1>
             <div className="flex items-center gap-3">
-            <Link
-              href="/tutorial"
-              className="text-sm font-medium text-slate-800 underline"
-            >
-              Check out the tutorial
-            </Link>
+					<Link
+					  href="/prototype/create"
+					  className="text-sm font-medium text-slate-800 underline"
+					>
+					  Check out People Mode
+					</Link>
 <Link
               href="/feed"
               className="text-sm font-medium text-slate-800 underline"
@@ -136,18 +134,11 @@ export default function AddPage() {
           </div>
 
           <p className="text-sm text-slate-500">Find new sides to every post</p>
-
-          {/* Context blurb (keep concise to preserve above-the-fold CTAs) */}
-          <p className="mt-3 text-sm leading-relaxed text-slate-700">
-            Flipside lets us take a post or idea and instantly see it reframed through multiple perspectives so we can
-            understand it more clearly, challenge our own assumptions, and think beyond our first reaction.
-          </p>
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Source selector */}
-          {/* Shift the selector down slightly to give the blurb breathing room */}
-          <div className="mt-3 space-y-2 text-sm">
+          <div className="space-y-2 text-sm">
             <p className="font-medium">What are you flipping?</p>
             <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
               <label className="inline-flex items-center gap-2">
@@ -202,7 +193,7 @@ export default function AddPage() {
           {/* Text input */}
           <div className="rounded-[28px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <textarea
-              className="h-36 w-full resize-none rounded-2xl border-0 bg-transparent px-1 py-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+              className="h-40 w-full resize-none rounded-2xl border-0 bg-transparent px-1 py-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
               placeholder="Paste a post, quote, or hot take that needs to be unpacked..."
               value={text}
               onChange={(e) => setText(e.target.value)}
