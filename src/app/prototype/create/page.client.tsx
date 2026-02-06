@@ -1,13 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-
 import { usePrototypeStore } from "@/prototype/people/store";
 import { TOPICS } from "@/prototype/people/mockData";
-
-type SourceType = "original" | "import-self" | "import-other";
 
 export default function CreatePrototypeClient() {
   const router = useRouter();
@@ -15,250 +12,144 @@ export default function CreatePrototypeClient() {
   const seedIfNeeded = usePrototypeStore((s) => s.seedIfNeeded);
   const startPeopleDraft = usePrototypeStore((s) => s.startPeopleDraft);
 
-  // ✅ pull seeded posts so we can pick a sample by topic
-  const posts = usePrototypeStore((s: any) => s.posts ?? []);
-
+  const [mode, setMode] = useState<"people" | "ai">("people"); // default People
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [lastAutoText, setLastAutoText] = useState<string | null>(null);
+  const [topicId, setTopicId] = useState(TOPICS[0]?.id ?? "t01");
 
-  // Keep UI identical to MVP Add Flip
-  const [sourceType, setSourceType] = useState<SourceType>("original");
-  const [sourceUrl, setSourceUrl] = useState("");
-
-  // Prototype topic pool selector (moved to bottom per request)
-  const [topicId, setTopicId] = useState<string>(() => TOPICS?.[0]?.id ?? "general");
-
-  // ✅ prevents overwriting user-typed content
-  const [userEdited, setUserEdited] = useState(false);
-
-  useEffect(() => {
-    // ✅ Preload sample flips for People Mode (candidate pools + demo decks).
-    // These are keyed by TOPICS[].id, so they align with the selector below.
-    try {
-      seedIfNeeded?.();
-    } catch {
-      // no-op
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const topicLabel = useMemo(() => {
-    return TOPICS.find((t) => t.id === topicId)?.label ?? "this topic";
+  const selectedTopic = useMemo(() => {
+    return TOPICS.find((t) => t.id === topicId) ?? TOPICS[0];
   }, [topicId]);
 
-  // ✅ pick a topic-specific sample flip (prefer an "anchor" post: no lensLabel)
-  const sampleTextForTopic = useMemo(() => {
-    if (!posts?.length) return "";
 
-    // In your mock data: "anchor" is typically a post with no lensLabel
-    const anchor =
-      posts.find((p: any) => p.topicId === topicId && !p.lensLabel && typeof p.text === "string") ??
-      posts.find((p: any) => p.topicId === topicId && typeof p.text === "string");
-
-    if (anchor?.text) return anchor.text;
-
-    // fallback (should rarely hit if your mock data is present)
-    return `Hot take about ${topicLabel}…`;
-  }, [posts, topicId, topicLabel]);
-
-  // ✅ auto-fill the textarea when topic changes (but don't clobber user input)
   useEffect(() => {
-    if (!sampleTextForTopic) return;
+    seedIfNeeded();
+  }, [seedIfNeeded]);
 
-    // If user hasn't typed yet OR textbox is empty, inject the sample
-    if (!userEdited || text.trim() === "") {
-      setText(sampleTextForTopic);
-      setUserEdited(false);
+  // Tutorial: preload a demo Flip based on the selected topic pool
+  useEffect(() => {
+    if (mode !== "people") return;
+    const demo = selectedTopic?.anchor ?? "";
+    if (!demo) return;
+    // Only auto-fill if the user hasn't typed their own text (or is still on the last auto-filled demo)
+    if ((text.trim().length === 0 || (lastAutoText && text === lastAutoText)) && text !== demo) {
+      setText(demo);
+      setLastAutoText(demo);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topicId, sampleTextForTopic]);
+  }, [mode, selectedTopic, text, lastAutoText]);
 
-  function handleSourceTypeChange(e: ChangeEvent<HTMLInputElement>) {
-    const next = e.target.value as SourceType;
-    setSourceType(next);
-    if (next === "original") setSourceUrl("");
-  }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
+  const chars = text.length;
 
-    const trimmed = text.trim();
-    if (!trimmed) {
-      setError("Please add some text to flip.");
+  const canNext = useMemo(() => {
+    return text.trim().length > 0;
+  }, [text]);
+
+  function onNext() {
+    if (!canNext) return;
+
+    if (mode === "ai") {
+      // We are not mocking AI creation here.
+      router.push("/");
       return;
     }
 
-    setBusy(true);
-    try {
-      // ✅ Topic alignment: the People builder filters candidates by this topicId.
-      startPeopleDraft({ anchorText: trimmed, topicId });
-      router.push("/prototype/people-mode");
-    } catch (err: any) {
-      setError(err?.message ?? "Something went wrong. Please try again.");
-    } finally {
-      setBusy(false);
-    }
+    startPeopleDraft({ anchorText: text.trim(), topicId });
+
+    // IMPORTANT: client-side nav keeps zustand state
+    router.push("/prototype/people-mode");
   }
 
-  const showUrlBox = sourceType !== "original";
-  const canSubmit = !!text.trim() && !busy;
-
   return (
-    <div className="min-h-screen flex justify-center px-4 py-6">
-      <div className="w-full max-w-xl space-y-4">
-        <header className="space-y-1">
-          <div className="flex items-center justify-between gap-4">
-            <h1 className="text-2xl font-semibold tracking-tight">People Mode</h1>
+    <div className="min-h-screen bg-slate-50 px-6 py-10">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold text-slate-900">Add Flip</h1>
+            <div className="mt-2 text-slate-500">Posting as Ethan Downs</div>
           </div>
-        </header>
 
-        {/* People Mode explainer (prototype-safe) */}
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          <div className="font-semibold text-slate-900">What is People Mode?</div>
-          <p className="mt-1">
-            <span className="font-medium">People Mode</span> is a social version of FlipSide: instead of AI generating
-            perspectives, <span className="font-medium">you match</span> your post with real posts from other people
-            talking about the <span className="font-medium">same topic</span> from different angles (Calm, Bridge,
-            Cynical, Opposite, Playful).
-          </p>
-          <p className="mt-2">
-            <span className="font-medium">AI Mode</span> (the MVP experience) generates those lenses automatically.
-            People Mode makes the lenses feel grounded in real voices — and can later turn into a Room.
-          </p>
-          <div className="mt-2 text-xs text-slate-500">
-            Prototype note: People Mode currently uses placeholder / demo data so you can try the flow end-to-end.
-          </div>
+          <Link href="/prototype" className="text-sm underline text-slate-700">
+            Back to feed
+          </Link>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Source selector (match MVP layout) */}
-          <div className="space-y-2 text-sm">
-            <p className="font-medium">What are you flipping?</p>
-            <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="sourceType"
-                  value="original"
-                  checked={sourceType === "original"}
-                  onChange={handleSourceTypeChange}
-                />
-                <span>Original thought or post</span>
-              </label>
+        <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="text-lg font-semibold text-slate-900">Mode</div>
 
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="sourceType"
-                  value="import-self"
-                  checked={sourceType === "import-self"}
-                  onChange={handleSourceTypeChange}
-                />
-                <span>My post (paste a link)</span>
-              </label>
-
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="sourceType"
-                  value="import-other"
-                  checked={sourceType === "import-other"}
-                  onChange={handleSourceTypeChange}
-                />
-                <span>Someone else’s post (paste a link)</span>
-              </label>
+            <div className="inline-flex rounded-full border border-slate-200 bg-white p-1">
+              <button
+                type="button"
+                onClick={() => setMode("ai")}
+                className={`px-3 py-1 text-xs rounded-full ${
+                  mode === "ai" ? "bg-slate-900 text-white" : "text-slate-700"
+                }`}
+              >
+                AI
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("people")}
+                className={`px-3 py-1 text-xs rounded-full ${
+                  mode === "people" ? "bg-slate-900 text-white" : "text-slate-700"
+                }`}
+              >
+                People
+              </button>
             </div>
           </div>
 
-          {/* URL box (match MVP behavior) */}
-          {showUrlBox && (
-            <div className="space-y-2 text-sm">
-              <label className="font-medium">Link</label>
-              <input
-                type="url"
-                value={sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
-                placeholder="Paste the post URL…"
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
-                disabled={busy}
-              />
-              <p className="text-xs text-slate-500">
-                (Prototype note) Link import isn’t wired yet — it’s here to keep the UI consistent.
-              </p>
+          <div className="mt-5">
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Paste or write the original post text..."
+              className="w-full min-h-[220px] rounded-3xl border border-slate-200 bg-slate-50 px-6 py-6 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            />
+            <div className="mt-2 text-xs text-slate-500">{chars} chars</div>
+          </div>
+
+          {mode === "people" && (
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">
+                  Prototype topic pool
+                </div>
+                <div className="text-xs text-slate-500">
+                  Controls which candidate sets you see in the People builder.
+                </div>
+              </div>
+
+              <select
+                value={topicId}
+                onChange={(e) => setTopicId(e.target.value)}
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800"
+              >
+                {TOPICS.map((t, idx) => (
+                  <option key={t.id} value={t.id}>
+                    {idx + 1}. {t.label}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 
-          {/* Text box (match MVP styling) */}
-          <div className="space-y-2 text-sm">
-            <label className="font-medium">Add Flip</label>
-            <textarea
-              rows={7}
-              placeholder="Paste a post, quote, or hot take that needs to be unpacked..."
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                setUserEdited(true);
-              }}
-              disabled={busy}
-              className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
-            />
-          </div>
-
-          {error && <p className="text-xs text-red-600">{error}</p>}
-
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="w-full rounded-2xl bg-slate-700 px-6 py-3 text-sm font-medium text-white shadow-sm disabled:opacity-50"
-          >
-            {busy ? "Working…" : "Generate Flip"}
-          </button>
-
-          {/* CTA box footprint */}
-          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-            <span className="text-slate-600">
-              Next: you’ll pick the best matches for each lens to publish a People Deck.
-              <br />
-              <span className="text-slate-500 text-xs">
-                (Prototype) Candidates come from placeholder topic pools for now.
-              </span>
-            </span>
-            <Link
-              href="/account"
-              className="ml-4 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700"
+          <div className="mt-8">
+            <button
+              type="button"
+              onClick={onNext}
+              disabled={!canNext}
+              className={`rounded-full px-10 py-4 text-lg font-semibold ${
+                canNext
+                  ? "bg-slate-900 text-white hover:bg-slate-800"
+                  : "bg-slate-200 text-slate-500 cursor-not-allowed"
+              }`}
             >
-              Sign in
-            </Link>
+              {mode === "people" ? "Next" : "Post"}
+            </button>
           </div>
-
-          {/* Topic selector at bottom */}
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">Prototype topic pool</div>
-              <div className="text-xs text-slate-500">
-                Controls which placeholder candidate sets you see in the People builder.
-              </div>
-            </div>
-
-            <select
-              value={topicId}
-              onChange={(e) => {
-                setTopicId(e.target.value);
-                // allow auto-fill to happen on topic switch
-                setUserEdited(false);
-              }}
-              className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-            >
-              {TOPICS.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </form>
+        </div>
       </div>
     </div>
   );

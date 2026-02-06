@@ -1,7 +1,7 @@
 // src/app/page.tsx
 "use client";
 
-import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -13,15 +13,14 @@ import {
 } from "./firebase";
 import { collection, doc, setDoc } from "firebase/firestore";
 
-type SourceType = "original" | "import-self" | "import-other";
-
 export default function AddPage() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [sourceType, setSourceType] = useState<SourceType>("original");
-  const [sourceUrl, setSourceUrl] = useState("");
+  // We removed the "What are you flipping?" source selector for a cleaner MVP.
+  // For now, all flips are treated as "original" and no URL is collected.
+  const sourceType = "original" as const;
 
   // Stable auth state (avoids auth.currentUser flicker on first paint)
   const [user, setUser] = useState<any>(null);
@@ -32,14 +31,6 @@ export default function AddPage() {
     const unsub = auth.onAuthStateChanged((u) => setUser(u));
     return () => unsub();
   }, []);
-
-  function handleSourceTypeChange(e: ChangeEvent<HTMLInputElement>) {
-    const next = e.target.value as SourceType;
-    setSourceType(next);
-
-    // If they switch back to original, clear the link
-    if (next === "original") setSourceUrl("");
-  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -64,9 +55,6 @@ export default function AddPage() {
       const postsCol = collection(db, "posts");
       const postRef = doc(postsCol);
 
-      const isImported = sourceType !== "original";
-      const cleanedUrl = sourceUrl.trim();
-
       await setDoc(postRef, {
         id: postRef.id,
         text: text.trim(),
@@ -75,7 +63,7 @@ export default function AddPage() {
         votes: 0,
         replyCount: 0,
         sourceType,
-        sourceUrl: isImported && cleanedUrl ? cleanedUrl : null,
+        sourceUrl: null,
         authorIsAnonymous: !!u?.isAnonymous,
       });
 
@@ -109,7 +97,6 @@ export default function AddPage() {
   // Show sign-in CTA if not signed in OR signed in anonymously
   const showSignInBox = !user || !!user?.isAnonymous;
 
-  const showUrlBox = sourceType !== "original";
 
   return (
     <div className="min-h-screen flex justify-center px-4 py-6">
@@ -118,12 +105,12 @@ export default function AddPage() {
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-semibold tracking-tight">Add Flip</h1>
             <div className="flex items-center gap-3">
-					<Link
-					  href="/prototype/create"
-					  className="text-sm font-medium text-slate-800 underline"
-					>
-					  Check out People Mode
-					</Link>
+            <Link
+              href="/tutorial"
+              className="text-sm font-medium text-slate-800 underline"
+            >
+              Check out the tutorial
+            </Link>
 <Link
               href="/feed"
               className="text-sm font-medium text-slate-800 underline"
@@ -137,59 +124,6 @@ export default function AddPage() {
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Source selector */}
-          <div className="space-y-2 text-sm">
-            <p className="font-medium">What are you flipping?</p>
-            <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="sourceType"
-                  value="original"
-                  checked={sourceType === "original"}
-                  onChange={handleSourceTypeChange}
-                />
-                <span>Original thought or post</span>
-              </label>
-
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="sourceType"
-                  value="import-self"
-                  checked={sourceType === "import-self"}
-                  onChange={handleSourceTypeChange}
-                />
-                <span>My post from another platform</span>
-              </label>
-
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="sourceType"
-                  value="import-other"
-                  checked={sourceType === "import-other"}
-                  onChange={handleSourceTypeChange}
-                />
-                <span>Someone else&apos;s public post</span>
-              </label>
-            </div>
-
-            {/* URL box (no helper text) */}
-            {showUrlBox && (
-              <div className="pt-2">
-                <input
-                  type="url"
-                  placeholder="Original post link (optional)"
-                  className="w-full rounded-full border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  value={sourceUrl}
-                  onChange={(e) => setSourceUrl(e.target.value)}
-                  disabled={busy}
-                />
-              </div>
-            )}
-          </div>
-
           {/* Text input */}
           <div className="rounded-[28px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <textarea
