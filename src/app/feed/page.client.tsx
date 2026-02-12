@@ -1,3 +1,4 @@
+// src/app/feed/page.client.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -33,18 +34,17 @@ export default function FeedPageClient() {
     return () => unsub();
   }, []);
 
+  const hasPhoto = !!user?.photoURL;
+
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white/80 backdrop-blur">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center text-xs font-semibold">
             FS
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold tracking-tight">
-              Flipside
-            </span>
+            <span className="text-sm font-semibold tracking-tight">Flipside</span>
             <span className="text-[10px] text-slate-500">
               See any post through five lenses.
             </span>
@@ -55,6 +55,7 @@ export default function FeedPageClient() {
           <div className="hidden sm:flex items-center gap-1 text-[11px] text-slate-600">
             <span>Choose your timeline:</span>
           </div>
+
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as Filter)}
@@ -70,11 +71,15 @@ export default function FeedPageClient() {
 
           {user ? (
             <Link href="/account">
-              <img
-                src={user.photoURL}
-                alt="pfp"
-                className="w-8 h-8 rounded-full border border-slate-200"
-              />
+              {hasPhoto ? (
+                <img
+                  src={user.photoURL}
+                  alt="pfp"
+                  className="w-8 h-8 rounded-full border border-slate-200"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full border border-slate-200 bg-slate-100" />
+              )}
             </Link>
           ) : (
             <Link
@@ -85,13 +90,13 @@ export default function FeedPageClient() {
             </Link>
           )}
 
-					<Link
-					  href="/prototype/create"
-					  className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-900 shadow-sm"
-					>
-					  <span className="sm:hidden">People</span>
-					  <span className="hidden sm:inline">People Mode</span>
-					</Link>
+          <Link
+            href="/prototype/create"
+            className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-900 shadow-sm"
+          >
+            <span className="sm:hidden">People</span>
+            <span className="hidden sm:inline">People Mode</span>
+          </Link>
 
           <Link
             href="/"
@@ -102,7 +107,6 @@ export default function FeedPageClient() {
         </div>
       </header>
 
-      {/* Feed */}
       <main className="flex-1 px-4 py-4 max-w-2xl mx-auto w-full space-y-3">
         {posts.length === 0 && (
           <p className="text-xs text-slate-500 mt-4">
