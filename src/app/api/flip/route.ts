@@ -1,5 +1,5 @@
 // src/app/api/flip/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { TIMELINE_LIST } from "@/theme/timelines";
 import type { TimelineId } from "@/theme/timelines";
@@ -14,12 +14,12 @@ function wordCount(s: string) {
   return w.length;
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({} as any));
 
-    const postId = body.postId as string | undefined;
-    const text = body.text as string | undefined;
+    const postId = typeof body?.postId === "string" ? body.postId : undefined;
+    const text = typeof body?.text === "string" ? body.text : undefined;
 
     if (!postId || !text || !text.trim()) {
       return NextResponse.json(
@@ -33,7 +33,48 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const adminDb = getAdminDb();
+    // ✅ Make missing env issues obvious instead of silently failing
+    if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+      return NextResponse.json(
+        {
+          ok: false,
+          partialFailure: true,
+          details: [],
+          error:
+            "Missing FIREBASE_SERVICE_ACCOUNT_JSON (set it in Vercel Project → Settings → Environment Variables).",
+        },
+        { status: 200 }
+      );
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        {
+          ok: false,
+          partialFailure: true,
+          details: [],
+          error:
+            "Missing OPENAI_API_KEY (set it in Vercel Project → Settings → Environment Variables).",
+        },
+        { status: 200 }
+      );
+    }
+
+    let adminDb: ReturnType<typeof getAdminDb>;
+    try {
+      adminDb = getAdminDb();
+    } catch (e: any) {
+      console.error("[/api/flip] Firebase admin init error:", e);
+      return NextResponse.json(
+        {
+          ok: false,
+          partialFailure: true,
+          details: [],
+          error: `Firebase admin init error: ${e?.message ?? String(e)}`,
+        },
+        { status: 200 }
+      );
+    }
 
     // Length targeting: keep rewrites within ±10% of original word count (with a small floor)
     const wc = wordCount(text);
@@ -65,7 +106,10 @@ export async function POST(req: NextRequest) {
                   `Current lens: "${timeline.label}".\n` +
                   `Lens instructions:\n${timeline.prompt}`,
               },
-              { role: "user", content: `Original post:\n${text}` },
+              {
+                role: "user",
+                content: `Original post:\n${text}`,
+              },
             ],
             max_tokens: 220,
           });
@@ -84,7 +128,6 @@ export async function POST(req: NextRequest) {
             (rawContent || "").toString().trim() ||
             "(We couldn't generate this rewrite right now.)";
 
-          // If it drifts outside the word range, do one quick corrective pass.
           const outWc = wordCount(finalText);
           if (finalText && (outWc < minWords || outWc > maxWords)) {
             const fix = await openai.chat.completions.create({
@@ -124,7 +167,6 @@ export async function POST(req: NextRequest) {
             if (fixedText) finalText = fixedText;
           }
 
-          // ✅ Writes doc id = timelineId AND includes timelineId field (your SwipeDeck supports this)
           await adminDb
             .collection("posts")
             .doc(postId)
@@ -141,9 +183,13 @@ export async function POST(req: NextRequest) {
 
           return { timelineId, ok: true };
         } catch (err: any) {
-          console.error("[/api/flip] Error generating rewrite for", timelineId, err);
+          console.error(
+            "[/api/flip] Error generating rewrite for",
+            timelineId,
+            err
+          );
 
-          // Best-effort stub write so UI doesn't spin forever
+          // Best-effort stub write
           try {
             await adminDb
               .collection("posts")
@@ -182,7 +228,8 @@ export async function POST(req: NextRequest) {
         ok: false,
         partialFailure: true,
         details: [],
-        error: "Internal error generating rewrites",
+        // ✅ surface real message so you can fix it fast
+        error: err?.message ?? "Internal error generating rewrites",
       },
       { status: 200 }
     );
