@@ -45,7 +45,6 @@ export async function POST(req: NextRequest) {
         const timelineId = timeline.id as TimelineId;
 
         try {
-          // Primary generation
           const completion = await openai.chat.completions.create({
             model: "gpt-4.1-mini",
             messages: [
@@ -66,12 +65,8 @@ export async function POST(req: NextRequest) {
                   `Current lens: "${timeline.label}".\n` +
                   `Lens instructions:\n${timeline.prompt}`,
               },
-              {
-                role: "user",
-                content: `Original post:\n${text}`,
-              },
+              { role: "user", content: `Original post:\n${text}` },
             ],
-            // Keep tokens bounded; length is enforced via word-range rules above
             max_tokens: 220,
           });
 
@@ -129,6 +124,7 @@ export async function POST(req: NextRequest) {
             if (fixedText) finalText = fixedText;
           }
 
+          // ✅ Writes doc id = timelineId AND includes timelineId field (your SwipeDeck supports this)
           await adminDb
             .collection("posts")
             .doc(postId)
@@ -145,13 +141,9 @@ export async function POST(req: NextRequest) {
 
           return { timelineId, ok: true };
         } catch (err: any) {
-          console.error(
-            "[/api/flip] Error generating rewrite for",
-            timelineId,
-            err
-          );
+          console.error("[/api/flip] Error generating rewrite for", timelineId, err);
 
-          // Best-effort stub write
+          // Best-effort stub write so UI doesn't spin forever
           try {
             await adminDb
               .collection("posts")
