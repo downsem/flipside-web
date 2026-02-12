@@ -13,14 +13,33 @@ import {
 } from "./firebase";
 import { collection, doc, setDoc } from "firebase/firestore";
 
+type SourceType = "original" | "import-other";
+
+function detectPlatform(url: string): string {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes("x.com") || host.includes("twitter.com")) return "x";
+    if (host.includes("threads.net")) return "threads";
+    if (host.includes("bsky.app") || host.includes("bluesky")) return "bluesky";
+    if (host.includes("instagram.com")) return "instagram";
+    if (host.includes("tiktok.com")) return "tiktok";
+    if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
+    if (host.includes("facebook.com")) return "facebook";
+    if (host.includes("reddit.com")) return "reddit";
+    return "other";
+  } catch {
+    return "other";
+  }
+}
+
 export default function AddPage() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // We removed the "What are you flipping?" source selector for a cleaner MVP.
-  // For now, all flips are treated as "original" and no URL is collected.
-  const sourceType = "original" as const;
+  // ✅ Single optional "original post link" input
+  const [hasSourceLink, setHasSourceLink] = useState(false);
+  const [sourceUrl, setSourceUrl] = useState("");
 
   // Stable auth state (avoids auth.currentUser flicker on first paint)
   const [user, setUser] = useState<any>(null);
@@ -40,6 +59,23 @@ export default function AddPage() {
     setError(null);
 
     try {
+      // Validate optional link
+      const urlTrimmed = sourceUrl.trim();
+      if (hasSourceLink && urlTrimmed) {
+        try {
+          // throws if invalid
+          new URL(urlTrimmed);
+        } catch {
+          setError("That link doesn't look valid. Please paste a full URL.");
+          setBusy(false);
+          return;
+        }
+      }
+
+      const finalSourceUrl = hasSourceLink && urlTrimmed ? urlTrimmed : null;
+      const sourceType: SourceType = finalSourceUrl ? "import-other" : "original";
+      const sourcePlatform = finalSourceUrl ? detectPlatform(finalSourceUrl) : null;
+
       // Ensure we always have *some* Firebase user (anonymous is fine)
       let u = auth.currentUser;
       if (!u) {
@@ -63,11 +99,12 @@ export default function AddPage() {
         votes: 0,
         replyCount: 0,
         sourceType,
-        sourceUrl: null,
+        sourceUrl: finalSourceUrl,
+        sourcePlatform,
         authorIsAnonymous: !!u?.isAnonymous,
       });
 
-      // Always call API with postId + text so rewrites get written to Firestore
+      // Call API with postId + text so rewrites get written to Firestore
       const res = await fetch("/api/flip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -77,9 +114,12 @@ export default function AddPage() {
         }),
       });
 
-      if (!res.ok) {
-        console.error("Error generating rewrites", await res.text());
-        setError("Something went wrong creating your flip. Please try again.");
+      const json = await res.json().catch(() => null);
+
+      // If API explicitly failed, show the returned error string (super helpful)
+      if (!res.ok || !json?.ok) {
+        console.error("Error generating rewrites:", json ?? (await res.text()));
+        setError(json?.error ?? "Something went wrong creating your flip. Please try again.");
         setBusy(false);
         return;
       }
@@ -97,7 +137,6 @@ export default function AddPage() {
   // Show sign-in CTA if not signed in OR signed in anonymously
   const showSignInBox = !user || !!user?.isAnonymous;
 
-
   return (
     <div className="min-h-screen flex justify-center px-4 py-6">
       <div className="w-full max-w-xl space-y-4">
@@ -105,22 +144,20 @@ export default function AddPage() {
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-semibold tracking-tight">Add Flip</h1>
             <div className="flex items-center gap-3">
-            <Link
-              href="/tutorial"
-              className="text-sm font-medium text-slate-800 underline"
-            >
-              Check out the tutorial
-            </Link>
-<Link
-              href="/feed"
-              className="text-sm font-medium text-slate-800 underline"
-            >
-              Explore more flips →
-            </Link>
+              <Link
+                href="/prototype/create"
+                className="text-sm font-medium text-slate-800 underline"
+              >
+                Check out People Mode
+              </Link>
+              <Link
+                href="/feed"
+                className="text-sm font-medium text-slate-800 underline"
+              >
+                Explore more flips →
+              </Link>
+            </div>
           </div>
-          </div>
-
-          <p className="text-sm text-slate-500">Find new sides to every post</p>
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -133,6 +170,35 @@ export default function AddPage() {
               onChange={(e) => setText(e.target.value)}
               disabled={busy}
             />
+          </div>
+
+          {/* ✅ Single optional link section */}
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+            <label className="inline-flex items-center gap-2 text-slate-700">
+              <input
+                type="checkbox"
+                checked={hasSourceLink}
+                onChange={(e) => setHasSourceLink(e.target.checked)}
+                disabled={busy}
+              />
+              <span className="font-medium">Link to original social post</span>
+            </label>
+
+            {hasSourceLink && (
+              <div className="mt-2">
+                <input
+                  type="url"
+                  value={sourceUrl}
+                  onChange={(e) => setSourceUrl(e.target.value)}
+                  placeholder="Paste the original post URL…"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                  disabled={busy}
+                />
+                <div className="mt-1 text-xs text-slate-500">
+                  We’ll show this link on the Flip so people can trace it back to the source.
+                </div>
+              </div>
+            )}
           </div>
 
           {error && <p className="text-xs text-red-600">{error}</p>}
