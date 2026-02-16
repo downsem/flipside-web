@@ -21,7 +21,6 @@ export default function CreatePrototypeClient() {
     return TOPICS.find((t) => t.id === topicId) ?? TOPICS[0];
   }, [topicId]);
 
-
   useEffect(() => {
     seedIfNeeded();
   }, [seedIfNeeded]);
@@ -32,12 +31,14 @@ export default function CreatePrototypeClient() {
     const demo = selectedTopic?.anchor ?? "";
     if (!demo) return;
     // Only auto-fill if the user hasn't typed their own text (or is still on the last auto-filled demo)
-    if ((text.trim().length === 0 || (lastAutoText && text === lastAutoText)) && text !== demo) {
+    if (
+      (text.trim().length === 0 || (lastAutoText && text === lastAutoText)) &&
+      text !== demo
+    ) {
       setText(demo);
       setLastAutoText(demo);
     }
   }, [mode, selectedTopic, text, lastAutoText]);
-
 
   const chars = text.length;
 
@@ -74,7 +75,23 @@ export default function CreatePrototypeClient() {
           </Link>
         </div>
 
-        <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {/* ✅ People Mode explainer OUTSIDE the white box */}
+        {mode === "people" && (
+          <div className="mt-6">
+            <p className="text-sm text-slate-700">
+              <span className="font-medium">People Mode</span> is the social
+              version of Flipside: instead of AI generating perspectives, you
+              match your post with real posts from other people talking about
+              the same topic from different angles.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Prototype note: this is running on placeholder/demo data so you
+              can try the flow end-to-end.
+            </p>
+          </div>
+        )}
+
+        <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="text-lg font-semibold text-slate-900">Mode</div>
 
@@ -92,7 +109,9 @@ export default function CreatePrototypeClient() {
                 type="button"
                 onClick={() => setMode("people")}
                 className={`px-3 py-1 text-xs rounded-full ${
-                  mode === "people" ? "bg-slate-900 text-white" : "text-slate-700"
+                  mode === "people"
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-700"
                 }`}
               >
                 People
