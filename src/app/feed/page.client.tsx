@@ -7,6 +7,11 @@ import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { auth, db } from "@/app/firebase";
 import PostCard from "@/components/PostCard";
 import type { TimelineId } from "@/theme/timelines";
+import { AppShell } from "@/components/shell/AppShell";
+import { Card } from "@/components/ui/Card";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
 
 type Post = any;
 type Filter = "all" | TimelineId;
@@ -15,6 +20,8 @@ export default function FeedPageClient() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [user, setUser] = useState<any>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubAuth = auth.onAuthStateChanged((u) => setUser(u));
@@ -25,41 +32,56 @@ export default function FeedPageClient() {
     const postsRef = collection(db, "posts");
     const q = query(postsRef, orderBy("createdAt", "desc"));
 
-    const unsub = onSnapshot(q, (snap) => {
-      const docs: Post[] = [];
-      snap.forEach((d) => docs.push({ id: d.id, ...d.data() }));
-      setPosts(docs);
-    });
+    setLoading(true);
+    setErr(null);
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const docs: Post[] = [];
+        snap.forEach((d) => docs.push({ id: d.id, ...d.data() }));
+        setPosts(docs);
+        setLoading(false);
+      },
+      (e) => {
+        console.error("[feed] snapshot error", e);
+        setErr("Couldn’t load the feed. Please try again.");
+        setLoading(false);
+      }
+    );
 
     return () => unsub();
   }, []);
 
   const hasPhoto = !!user?.photoURL;
 
-  return (
-    <div className="min-h-screen flex flex-col">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center text-xs font-semibold">
-            FS
-          </div>
-          <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold tracking-tight">Flipside</span>
-            <span className="text-[10px] text-slate-500">
-              See any post through five lenses.
-            </span>
+  function PostCardSkeleton() {
+    return (
+      <Card>
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-10 w-10 rounded-full" />
+          <div className="flex-1">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="mt-2 h-3 w-24" />
           </div>
         </div>
+        <Skeleton className="mt-4 h-4 w-full" />
+        <Skeleton className="mt-2 h-4 w-5/6" />
+        <Skeleton className="mt-6 h-10 w-40 rounded-[var(--radius-pill)]" />
+      </Card>
+    );
+  }
 
+  return (
+    <AppShell
+      title="Feed"
+      headerRight={
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-1 text-[11px] text-slate-600">
-            <span>Choose your timeline:</span>
-          </div>
-
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as Filter)}
-            className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            className="rounded-[var(--radius-pill)] border border-neutral-200 bg-white px-3 py-2 text-[var(--text-sm)]"
+            aria-label="Timeline filter"
           >
             <option value="all">All</option>
             <option value="calm">Calm</option>
@@ -69,55 +91,58 @@ export default function FeedPageClient() {
             <option value="playful">Playful</option>
           </select>
 
-          {user ? (
-            <Link href="/account">
-              {hasPhoto ? (
+          <Link href="/account" className="inline-flex">
+            {user ? (
+              hasPhoto ? (
                 <img
                   src={user.photoURL}
-                  alt="pfp"
-                  className="w-8 h-8 rounded-full border border-slate-200"
+                  alt="profile"
+                  className="h-9 w-9 rounded-full border border-neutral-200"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full border border-slate-200 bg-slate-100" />
-              )}
-            </Link>
-          ) : (
-            <Link
-              href="/account"
-              className="hidden sm:inline-flex px-3 py-1 rounded-full bg-slate-900 text-white text-[11px] font-medium"
-            >
-              Sign in
-            </Link>
-          )}
-
-          <Link
-            href="/prototype/create"
-            className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-900 shadow-sm"
-          >
-            <span className="sm:hidden">People</span>
-            <span className="hidden sm:inline">People Mode</span>
-          </Link>
-
-          <Link
-            href="/"
-            className="inline-flex items-center justify-center rounded-full bg-blue-600 px-3 py-1 text-[11px] font-medium text-white shadow-sm"
-          >
-            Add Flip
+                <div className="h-9 w-9 rounded-full border border-neutral-200 bg-neutral-100" />
+              )
+            ) : (
+              <div className="h-9 w-9 rounded-full border border-neutral-200 bg-neutral-100" />
+            )}
           </Link>
         </div>
-      </header>
+      }
+    >
+      {err && (
+        <ErrorState
+          description={err}
+          onRetry={() => {
+            // simplest retry: reload page
+            window.location.reload();
+          }}
+        />
+      )}
 
-      <main className="flex-1 px-4 py-4 max-w-2xl mx-auto w-full space-y-3">
-        {posts.length === 0 && (
-          <p className="text-xs text-slate-500 mt-4">
-            No flips yet. Be the first to add one.
-          </p>
-        )}
+      {!err && loading && (
+        <div className="space-y-3">
+          <PostCardSkeleton />
+          <PostCardSkeleton />
+          <PostCardSkeleton />
+        </div>
+      )}
 
-        {posts.map((post) => (
-          <PostCard key={post.id} post={post} selectedTimeline={filter} />
-        ))}
-      </main>
-    </div>
+      {!err && !loading && posts.length === 0 && (
+        <EmptyState
+          title="No flips yet"
+          description="Be the first to add one."
+          ctaLabel="Create a flip"
+          onCta={() => (window.location.href = "/")}
+        />
+      )}
+
+      {!err && !loading && posts.length > 0 && (
+        <div className="space-y-3">
+          {posts.map((post) => (
+            <PostCard key={post.id} post={post} selectedTimeline={filter} />
+          ))}
+        </div>
+      )}
+    </AppShell>
   );
 }

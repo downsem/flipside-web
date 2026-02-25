@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { usePrototypeStore } from "@/prototype/people/store";
 import { TOPICS } from "@/prototype/people/mockData";
+import { AppShell } from "@/components/shell/AppShell";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 
 export default function CreatePrototypeClient() {
   const router = useRouter();
@@ -62,114 +65,113 @@ export default function CreatePrototypeClient() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-6 py-10">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold text-slate-900">Add Flip</h1>
-            <div className="mt-2 text-slate-500">Posting as Ethan Downs</div>
-          </div>
-
-          <Link href="/prototype" className="text-sm underline text-slate-700">
-            Back to feed
+    <AppShell
+      title="People Mode"
+      headerRight={
+        <div className="flex items-center gap-2">
+          <Link href="/prototype">
+            <Button size="sm" variant="ghost" className="whitespace-nowrap">
+              Decks
+            </Button>
+          </Link>
+          <Link href="/feed">
+            <Button size="sm" variant="ghost" className="whitespace-nowrap">
+              Exit
+            </Button>
           </Link>
         </div>
+      }
+    >
+      {/* People Mode explainer */}
+      {mode === "people" && (
+        <div className="mb-4">
+          <p className="text-sm text-neutral-700">
+            <span className="font-medium">People Mode</span> is the social
+            version of Flipside: instead of AI generating perspectives, you
+            match your post with real posts from other people talking about the
+            same topic from different angles.
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            Prototype note: this is running on placeholder/demo data so you can
+            try the flow end-to-end.
+          </p>
+        </div>
+      )}
 
-        {/* ✅ People Mode explainer OUTSIDE the white box */}
-        {mode === "people" && (
-          <div className="mt-6">
-            <p className="text-sm text-slate-700">
-              <span className="font-medium">People Mode</span> is the social
-              version of Flipside: instead of AI generating perspectives, you
-              match your post with real posts from other people talking about
-              the same topic from different angles.
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Prototype note: this is running on placeholder/demo data so you
-              can try the flow end-to-end.
-            </p>
-          </div>
-        )}
-
-        <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="text-lg font-semibold text-slate-900">Mode</div>
-
-            <div className="inline-flex rounded-full border border-slate-200 bg-white p-1">
-              <button
-                type="button"
-                onClick={() => setMode("ai")}
-                className={`px-3 py-1 text-xs rounded-full ${
-                  mode === "ai" ? "bg-slate-900 text-white" : "text-slate-700"
-                }`}
-              >
-                AI
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("people")}
-                className={`px-3 py-1 text-xs rounded-full ${
-                  mode === "people"
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-700"
-                }`}
-              >
-                People
-              </button>
-            </div>
+      <Card className="shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="text-[var(--text-md)] font-semibold text-neutral-900">
+            Mode
           </div>
 
-          <div className="mt-5">
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Paste or write the original post text..."
-              className="w-full min-h-[220px] rounded-3xl border border-slate-200 bg-slate-50 px-6 py-6 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
-            />
-            <div className="mt-2 text-xs text-slate-500">{chars} chars</div>
-          </div>
-
-          {mode === "people" && (
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">
-                  Prototype topic pool
-                </div>
-                <div className="text-xs text-slate-500">
-                  Controls which candidate sets you see in the People builder.
-                </div>
-              </div>
-
-              <select
-                value={topicId}
-                onChange={(e) => setTopicId(e.target.value)}
-                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800"
-              >
-                {TOPICS.map((t, idx) => (
-                  <option key={t.id} value={t.id}>
-                    {idx + 1}. {t.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="mt-8">
+          <div className="inline-flex rounded-[var(--radius-pill)] border border-neutral-200 bg-white p-1">
             <button
               type="button"
-              onClick={onNext}
-              disabled={!canNext}
-              className={`rounded-full px-10 py-4 text-lg font-semibold ${
-                canNext
-                  ? "bg-slate-900 text-white hover:bg-slate-800"
-                  : "bg-slate-200 text-slate-500 cursor-not-allowed"
+              onClick={() => setMode("ai")}
+              className={`px-3 py-1 text-xs rounded-[var(--radius-pill)] ${
+                mode === "ai" ? "bg-neutral-900 text-white" : "text-neutral-700"
               }`}
             >
-              {mode === "people" ? "Next" : "Post"}
+              AI
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("people")}
+              className={`px-3 py-1 text-xs rounded-[var(--radius-pill)] ${
+                mode === "people"
+                  ? "bg-neutral-900 text-white"
+                  : "text-neutral-700"
+              }`}
+            >
+              People
             </button>
           </div>
         </div>
-      </div>
-    </div>
+
+        <div className="mt-4">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Paste or write the original post text..."
+            className="w-full min-h-[220px] rounded-[var(--radius-card)] border border-neutral-200 bg-neutral-50 px-4 py-4 text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+          />
+          <div className="mt-2 text-xs text-neutral-500">{chars} chars</div>
+        </div>
+
+        {mode === "people" && (
+          <div className="mt-4 rounded-[var(--radius-card)] border border-neutral-200 bg-white px-4 py-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-neutral-900">
+                  Prototype topic pool
+                </div>
+                <div className="text-xs text-neutral-500">
+                  Controls which candidate sets you see in the People builder.
+                </div>
+              </div>
+              <div className="w-full sm:w-[320px]">
+                <select
+                  value={topicId}
+                  onChange={(e) => setTopicId(e.target.value)}
+                  className="w-full rounded-[var(--radius-pill)] border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-900"
+                >
+                  {TOPICS.map((t, idx) => (
+                    <option key={t.id} value={t.id}>
+                      {idx + 1}. {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-5">
+          <Button onClick={onNext} disabled={!canNext} className="w-full">
+            {mode === "people" ? "Next" : "Post"}
+          </Button>
+        </div>
+      </Card>
+    </AppShell>
   );
 }

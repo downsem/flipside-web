@@ -5,9 +5,8 @@ import { TIMELINE_LIST } from "@/theme/timelines";
 import type { TimelineId } from "@/theme/timelines";
 import { getAdminDb, adminFieldValue } from "@/lib/firebaseAdmin";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// NOTE: Do NOT initialize the OpenAI client at module-load time.
+// Next can evaluate route modules during build/collect; missing env vars would crash builds.
 
 function wordCount(s: string) {
   const w = s.trim().split(/\s+/).filter(Boolean);
@@ -59,6 +58,8 @@ export async function POST(req: Request) {
         { status: 200 }
       );
     }
+
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     let adminDb: ReturnType<typeof getAdminDb>;
     try {

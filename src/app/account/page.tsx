@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { auth, loginWithGoogle, logoutUser } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { AppShell } from "@/components/shell/AppShell";
+import { Button } from "@/components/ui/Button";
 
 export default function AccountPage() {
   const [user, setUser] = useState<any>(null);
@@ -13,25 +15,21 @@ export default function AccountPage() {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col items-center py-16 px-4">
-      <Link href="/feed" className="mb-6 text-sm underline">
-        ← Back to feed
-      </Link>
-
-      <h1 className="text-2xl font-semibold mb-6">Account</h1>
-
+    <AppShell
+      title="Profile"
+      headerRight={
+        <Link href="/feed" className="text-[var(--text-sm)] underline">
+          Feed
+        </Link>
+      }
+    >
       {!user && (
-        <>
-          <p className="text-sm mb-4 text-center max-w-xs">
+        <div className="text-center space-y-4">
+          <p className="text-sm text-neutral-700">
             Sign in to create flips, vote, and reply.
           </p>
-          <button
-            onClick={loginWithGoogle}
-            className="bg-slate-900 text-white px-6 py-2 rounded-2xl text-sm"
-          >
-            Sign in with Google
-          </button>
-        </>
+          <Button onClick={loginWithGoogle}>Sign in with Google</Button>
+        </div>
       )}
 
       {user && (
@@ -44,14 +42,11 @@ export default function AccountPage() {
           <p className="text-lg font-medium">{user.displayName}</p>
           <p className="text-sm text-slate-500">{user.email}</p>
 
-          <button
-            onClick={logoutUser}
-            className="mt-6 bg-slate-700 text-white px-6 py-2 rounded-2xl text-sm"
-          >
+          <Button variant="secondary" onClick={logoutUser}>
             Sign out
-          </button>
+          </Button>
         </div>
       )}
-    </div>
+    </AppShell>
   );
 }

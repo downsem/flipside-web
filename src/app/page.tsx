@@ -12,6 +12,8 @@ import {
   loginAnonymously,
 } from "./firebase";
 import { collection, doc, setDoc } from "firebase/firestore";
+import { AppShell } from "@/components/shell/AppShell";
+import { Button } from "@/components/ui/Button";
 
 type SourceType = "original" | "import-other";
 
@@ -116,12 +118,11 @@ export default function AddPage() {
 
       const json = await res.json().catch(() => null);
 
-      // If API explicitly failed, show the returned error string (super helpful)
+      // If rewrites fail to generate (missing env vars in Codespaces, OpenAI hiccup, etc),
+      // we still created the original post successfully — don't strand the user on Create.
+      // We'll log the error and continue to the feed.
       if (!res.ok || !json?.ok) {
         console.error("Error generating rewrites:", json ?? (await res.text()));
-        setError(json?.error ?? "Something went wrong creating your flip. Please try again.");
-        setBusy(false);
-        return;
       }
 
       router.push("/feed");
@@ -138,99 +139,85 @@ export default function AddPage() {
   const showSignInBox = !user || !!user?.isAnonymous;
 
   return (
-    <div className="min-h-screen flex justify-center px-4 py-6">
-      <div className="w-full max-w-xl space-y-4">
-        <header className="space-y-1">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold tracking-tight">Add Flip</h1>
-            <div className="flex items-center gap-3">
-              <Link
-                href="/prototype/create"
-                className="text-sm font-medium text-slate-800 underline"
-              >
-                Check out People Mode
-              </Link>
-              <Link
-                href="/feed"
-                className="text-sm font-medium text-slate-800 underline"
-              >
-                Explore more flips →
-              </Link>
-            </div>
-          </div>
-        </header>
+    <AppShell
+      title="Create"
+      headerRight={
+        <div className="flex items-center gap-2">
+          <Link href="/prototype/create" className="text-[var(--text-sm)] underline">
+            People
+          </Link>
+          <Link href="/feed" className="text-[var(--text-sm)] underline">
+            Feed
+          </Link>
+        </div>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Text input */}
+        <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white px-4 py-3 shadow-sm">
+          <textarea
+            className="h-40 w-full resize-none rounded-2xl border-0 bg-transparent px-1 py-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+            placeholder="Paste a post, quote, or hot take that needs to be unpacked..."
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            disabled={busy}
+          />
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Text input */}
-          <div className="rounded-[28px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <textarea
-              className="h-40 w-full resize-none rounded-2xl border-0 bg-transparent px-1 py-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-              placeholder="Paste a post, quote, or hot take that needs to be unpacked..."
-              value={text}
-              onChange={(e) => setText(e.target.value)}
+        {/* ✅ Single optional link section */}
+        <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm">
+          <label className="inline-flex items-center gap-2 text-slate-700">
+            <input
+              type="checkbox"
+              checked={hasSourceLink}
+              onChange={(e) => setHasSourceLink(e.target.checked)}
               disabled={busy}
             />
-          </div>
+            <span className="font-medium">Link to original social post</span>
+          </label>
 
-          {/* ✅ Single optional link section */}
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-            <label className="inline-flex items-center gap-2 text-slate-700">
+          {hasSourceLink && (
+            <div className="mt-2">
               <input
-                type="checkbox"
-                checked={hasSourceLink}
-                onChange={(e) => setHasSourceLink(e.target.checked)}
+                type="url"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                placeholder="Paste the original post URL…"
+                className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
                 disabled={busy}
               />
-              <span className="font-medium">Link to original social post</span>
-            </label>
-
-            {hasSourceLink && (
-              <div className="mt-2">
-                <input
-                  type="url"
-                  value={sourceUrl}
-                  onChange={(e) => setSourceUrl(e.target.value)}
-                  placeholder="Paste the original post URL…"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-                  disabled={busy}
-                />
-                <div className="mt-1 text-xs text-slate-500">
-                  We’ll show this link on the Flip so people can trace it back to the source.
-                </div>
+              <div className="mt-1 text-xs text-slate-500">
+                We’ll show this link on the Flip so people can trace it back to the source.
               </div>
-            )}
-          </div>
-
-          {error && <p className="text-xs text-red-600">{error}</p>}
-
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="w-full rounded-2xl bg-slate-700 px-6 py-3 text-sm font-medium text-white shadow-sm disabled:opacity-50"
-          >
-            Generate Flip
-          </button>
-
-          {/* Sign-in CTA */}
-          {showSignInBox && (
-            <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-              <span className="text-slate-600">
-                You can try Flipside without signing in.
-                <br />
-                <span className="text-slate-500 text-xs">
-                  Sign in later to keep your flips.
-                </span>
-              </span>
-              <Link
-                href="/account"
-                className="ml-4 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700"
-              >
-                Sign in
-              </Link>
             </div>
           )}
-        </form>
-      </div>
-    </div>
+        </div>
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+
+        <Button type="submit" loading={busy} disabled={!canSubmit} className="w-full">
+          Generate Flip
+        </Button>
+
+        {/* Sign-in CTA */}
+        {showSignInBox && (
+          <div className="flex items-center justify-between rounded-[var(--radius-card)] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm">
+            <span className="text-slate-600">
+              You can try Flipside without signing in.
+              <br />
+              <span className="text-slate-500 text-xs">
+                Sign in later to keep your flips.
+              </span>
+            </span>
+            <Link
+              href="/account"
+              className="ml-4 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700"
+            >
+              Sign in
+            </Link>
+          </div>
+        )}
+      </form>
+    </AppShell>
   );
 }

@@ -7,6 +7,8 @@ import { collection, onSnapshot, query } from "firebase/firestore";
 import { db } from "@/app/firebase";
 import type { TimelineId, TimelineSpec } from "@/theme/timelines";
 import { TIMELINE_LIST } from "@/theme/timelines";
+import { LensTabs, type Lens, LENSES } from "@/components/deck/LensTabs";
+import { useSwipe } from "@/components/deck/useSwipe";
 
 type FlipCard = {
   id: "original" | TimelineId;
@@ -113,6 +115,46 @@ export default function SwipeDeck({
   const current = cards[index] ?? cards[0];
   const currentVote: VoteValue = (localVotes[current.id] ?? 0) as VoteValue;
 
+  // LensTabs is only meaningful when we're showing the full deck.
+  const showLensTabs = selectedTimeline === "all" && cards.length > 1;
+
+  // LensTabs uses SHORT names (Calm/Bridge/...) but TIMELINE_LIST labels are longer
+  // (e.g. "Calm-Constructive"). Never key behavior off label text.
+  const ID_TO_LENS: Record<string, Lens> = {
+    original: "Original",
+    calm: "Calm",
+    bridge: "Bridge",
+    cynical: "Cynical",
+    opposite: "Opposite",
+    playful: "Playful",
+  };
+
+  const LENS_TO_ID: Record<Lens, "original" | TimelineId> = {
+    Original: "original",
+    Calm: "calm",
+    Bridge: "bridge",
+    Cynical: "cynical",
+    Opposite: "opposite",
+    Playful: "playful",
+  };
+
+  const lensValue: Lens = useMemo(() => {
+    if (!showLensTabs) return "Original";
+    return ID_TO_LENS[current.id] ?? "Original";
+  }, [current.id, showLensTabs]);
+
+  const lensIndex = useMemo(() => {
+    const i = LENSES.indexOf(lensValue);
+    return i >= 0 ? i : 0;
+  }, [lensValue]);
+
+  function setLens(lens: Lens) {
+    if (!showLensTabs) return;
+    const targetId = LENS_TO_ID[lens];
+    const idx = cards.findIndex((c) => c.id === targetId);
+    setIndex(idx >= 0 ? idx : 0);
+  }
+
   function handlePrev() {
     setIndex((prev) => (prev > 0 ? prev - 1 : prev));
   }
@@ -120,6 +162,12 @@ export default function SwipeDeck({
   function handleNext() {
     setIndex((prev) => (prev < cards.length - 1 ? prev + 1 : prev));
   }
+
+  const swipe = useSwipe({
+    onLeft: handleNext,
+    onRight: handlePrev,
+    threshold: 40,
+  });
 
   async function handleReplySubmit() {
     const trimmed = replyText.trim();
@@ -157,14 +205,22 @@ export default function SwipeDeck({
 
   return (
     <div className="space-y-3">
+      {showLensTabs && (
+        <LensTabs value={lensValue} index={lensIndex} onChange={setLens} />
+      )}
+
       {/* Header row */}
       <div className="flex items-center justify-between mb-1">
-        <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
-          <span className="text-[11px] font-medium text-slate-700">
-            {current.icon && <span className="mr-1">{current.icon}</span>}
-            {current.label}
-          </span>
-        </div>
+        {!showLensTabs ? (
+          <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1">
+            <span className="text-[11px] font-medium text-slate-700">
+              {current.icon && <span className="mr-1">{current.icon}</span>}
+              {current.label}
+            </span>
+          </div>
+        ) : (
+          <div className="text-[11px] text-slate-500">Swipe or tap a lens</div>
+        )}
 
         <div className="flex items-center gap-2">
           <Link
@@ -173,30 +229,6 @@ export default function SwipeDeck({
           >
             Share lens
           </Link>
-
-          {cards.length > 1 && (
-            <div className="flex items-center gap-2 text-[11px] text-slate-500">
-              <button
-                type="button"
-                onClick={handlePrev}
-                disabled={index === 0}
-                className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
-              >
-                ‹
-              </button>
-              <span>
-                {index + 1}/{cards.length}
-              </span>
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={index === cards.length - 1}
-                className="px-2 py-1 rounded-full border border-slate-200 disabled:opacity-40"
-              >
-                ›
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
@@ -217,7 +249,11 @@ export default function SwipeDeck({
       )}
 
       {/* Text */}
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-900 whitespace-pre-wrap">
+      <div
+        onPointerDown={showLensTabs ? swipe.onPointerDown : undefined}
+        onPointerUp={showLensTabs ? swipe.onPointerUp : undefined}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-900 whitespace-pre-wrap touch-pan-y"
+      >
         {current.text}
       </div>
 
