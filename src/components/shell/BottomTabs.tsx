@@ -12,7 +12,7 @@ const TABS = [
 ];
 
 export function BottomTabs() {
-  const pathname = usePathname() || "/";
+  const pathname = usePathname();
 
   const hide = pathname.startsWith("/share/") || pathname.startsWith("/post/");
   if (hide) return null;
@@ -24,41 +24,24 @@ export function BottomTabs() {
       )}
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="mx-auto grid h-14 max-w-2xl grid-cols-4 px-2">
+      <div className="mx-auto grid h-14 max-w-2xl grid-cols-4 gap-2 px-3">
         {TABS.map((t) => {
           const active =
-            pathname === t.href ||
-            (t.href !== "/" && pathname.startsWith(t.href));
+            pathname === t.href || (t.href !== "/" && pathname.startsWith(t.href));
 
-          // The center "Create" tab was styled as primary unconditionally,
-          // which made it look selected on every page.
-          const base =
-            "flex items-center justify-center text-[var(--text-sm)] transition";
-
-          // Make active state unmistakable across tabs.
-          // - Center tab keeps a "composer" look, but is NOT highlighted when inactive.
-          // - Non-center tabs get a soft pill when active.
-          const cls = t.isCenter
-            ? cn(
-                base,
-                "mx-2 rounded-[var(--radius-pill)]",
-                active
-                  ? "bg-neutral-900 text-white font-semibold"
-                  : "bg-white text-neutral-700 border border-neutral-200"
-              )
-            : cn(
-                base,
-                "mx-1 rounded-[var(--radius-pill)]",
-                active
-                  ? "bg-neutral-100 text-neutral-900 font-semibold"
-                  : "text-neutral-600"
-              );
           return (
             <Link
               key={t.href}
               href={t.href}
-              aria-current={active ? "page" : undefined}
-              className={cls}
+              className={cn(
+                "flex items-center justify-center",
+                "min-h-[44px] rounded-[var(--radius-pill)]",
+                "text-[var(--text-sm)] font-medium",
+                // Requested: active = black, inactive = white
+                active ? "bg-neutral-900 text-white" : "bg-white text-neutral-700",
+                // Slightly emphasize center tab without changing the rule
+                t.isCenter && "font-semibold"
+              )}
             >
               {t.label}
             </Link>

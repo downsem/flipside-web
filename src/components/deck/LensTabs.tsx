@@ -34,13 +34,44 @@ export function LensTabs({
         className
       )}
     >
-      <div className="flex items-center justify-between gap-3">
+      {/* Mobile: dot-based (no labels), still tappable */}
+      <div className="flex items-center justify-between gap-3 sm:hidden">
+        <div className="flex items-center">
+          {LENSES.map((lens, i) => {
+            const active = i === index;
+            return (
+              <button
+                key={lens}
+                type="button"
+                onClick={() => onChange(lens)}
+                aria-label={lens}
+                className="p-2"
+              >
+                <span
+                  className={cn(
+                    "block h-2 w-2 rounded-full",
+                    active ? "bg-neutral-900" : "bg-neutral-200"
+                  )}
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="shrink-0 text-[var(--text-sm)] text-neutral-600">
+          {index + 1}/{LENSES.length}
+        </div>
+      </div>
+
+      {/* Desktop: labeled segmented control */}
+      <div className="hidden items-center justify-between gap-3 sm:flex">
         <div className="flex min-w-0 gap-2 overflow-x-auto pb-1">
           {LENSES.map((lens) => {
             const active = lens === value;
             return (
               <button
                 key={lens}
+                type="button"
                 onClick={() => onChange(lens)}
                 className={cn(
                   "shrink-0 whitespace-nowrap rounded-[var(--radius-pill)] px-3 py-2",
