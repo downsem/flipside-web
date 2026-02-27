@@ -13,17 +13,32 @@ type DeckCard = {
   icon?: string;
   postId: string;
   text: string;
-  authorLabel: string;
+  authorName: string;
+  authorHandle?: string;
 };
 
+function fmtHandle(handle?: string) {
+  if (!handle) return "";
+  const h = handle.startsWith("@") ? handle.slice(1) : handle;
+  return `@${h}`;
+}
+
+function initials(name?: string) {
+  const n = (name || "").trim();
+  if (!n) return "?";
+  const parts = n.split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] ?? "?";
+  const last = parts.length > 1 ? parts[parts.length - 1]?.[0] ?? "" : "";
+  return (first + last).toUpperCase();
+}
+
 export default function PeopleDeckSwipe({ deck }: { deck: any }) {
-  const voteOnPost = usePrototypeStore((s) => s.voteOnPost);
-  const addReplyToPost = usePrototypeStore((s) => s.addReplyToPost);
+  const { voteOnPost, addReplyToPost } = usePrototypeStore();
 
   const [index, setIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
 
-  // Local selected vote per card for UI (prevents default-selected bugs)
+  // Local selected vote per card for UI
   const [localVotes, setLocalVotes] = useState<Record<DeckCardId, -1 | 1 | null>>(
     () => ({
       anchor: null,
@@ -35,35 +50,44 @@ export default function PeopleDeckSwipe({ deck }: { deck: any }) {
     })
   );
 
+  // Build the 6-card list: Anchor first, then lenses
   const cards: DeckCard[] = useMemo(() => {
     const list: DeckCard[] = [];
 
     const anchor = deck?.anchor;
+    const anchorName =
+      anchor?.author?.name ??
+      anchor?.author?.displayName ??
+      deck?.ownerName ??
+      "Unknown";
+    const anchorHandle = anchor?.author?.handle ?? deck?.ownerHandle;
+
     list.push({
       id: "anchor",
       label: "Anchor",
       postId: anchor?.id ?? "anchor_missing",
       text: anchor?.text ?? "(Missing anchor)",
-      authorLabel: anchor?.author
-        ? `${anchor.author.name ?? anchor.author.displayName ?? "Unknown"} @${
-            anchor.author.handle ?? "unknown"
-          }`
-        : deck?.ownerName
-          ? `${deck.ownerName} ${deck.ownerHandle ?? ""}`.trim()
-          : "Unknown",
+      authorName: anchorName,
+      authorHandle: anchorHandle,
     });
 
     TIMELINE_LIST.forEach((t: TimelineSpec) => {
       const m = deck?.locked?.[t.id];
+      const name =
+        m?.author?.name ??
+        m?.author?.displayName ??
+        deck?.ownerName ??
+        "Unknown";
+      const handle = m?.author?.handle ?? deck?.ownerHandle;
+
       list.push({
         id: t.id,
         label: t.label,
         icon: t.icon,
         postId: m?.id ?? `${t.id}_missing`,
         text: m?.text ?? "(Missing match)",
-        authorLabel: m?.author
-          ? `${m.author.name ?? m.author.displayName ?? "Unknown"} @${m.author.handle ?? "unknown"}`
-          : `${deck?.ownerName ?? "Unknown"} ${deck?.ownerHandle ?? ""}`.trim(),
+        authorName: name,
+        authorHandle: handle,
       });
     });
 
@@ -72,6 +96,7 @@ export default function PeopleDeckSwipe({ deck }: { deck: any }) {
 
   const current = cards[index] ?? cards[0];
 
+  // Reset input when card changes
   useEffect(() => {
     setReplyText("");
   }, [index]);
@@ -160,8 +185,22 @@ export default function PeopleDeckSwipe({ deck }: { deck: any }) {
         </div>
       </div>
 
-      {/* Author */}
-      <div className="text-[11px] text-slate-500">{current.authorLabel}</div>
+      {/* Author (make contributor feel primary) */}
+      <div className="flex items-center gap-2">
+        <div className="h-8 w-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold">
+          {initials(current.authorName)}
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-900 truncate">
+            {current.authorName}{" "}
+            {current.authorHandle ? (
+              <span className="font-normal text-slate-500">
+                {fmtHandle(current.authorHandle)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
 
       {/* Text */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-900 whitespace-pre-wrap">
@@ -220,7 +259,9 @@ export default function PeopleDeckSwipe({ deck }: { deck: any }) {
           <div className="space-y-2">
             {replies.slice(0, 3).map((r: any) => (
               <div key={r.id} className="text-xs text-slate-800">
-                <span className="text-slate-500 mr-2">{r.author?.name ?? r.authorDisplayName ?? "Anon"}</span>
+                <span className="text-slate-500 mr-2">
+                  {r.author?.name ?? r.authorDisplayName ?? "Anon"}
+                </span>
                 {r.text}
               </div>
             ))}
