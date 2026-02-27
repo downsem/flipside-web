@@ -32,7 +32,7 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
     return (deck as any).ownerHandle === currentUser.handle;
   }, [currentUser, deck]);
 
-  // Highlight *other* contributors (social proof) instead of the deck builder.
+  // Social proof: highlight *other* contributors instead of the deck builder.
   const contributors = useMemo(() => {
     const ownerId = (deck as any)?.ownerUserId;
     const seen = new Map<string, { id: string; name: string; handle: string }>();
@@ -51,6 +51,7 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
     };
 
     try {
+      // Include anchor + locked lens authors if they aren't the owner.
       add((deck as any)?.anchor?.author);
       const locked = (deck as any)?.locked ?? {};
       Object.values(locked).forEach((p: any) => add(p?.author));
@@ -81,8 +82,9 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
         <div className="min-w-0">
           {contributors.length > 0 ? (
             <div className="flex items-center gap-3">
+              <div className="text-xs font-medium text-slate-500 shrink-0">Contributors</div>
               <div className="flex -space-x-2">
-                {contributors.slice(0, 5).map((c) => (
+                {contributors.slice(0, 4).map((c) => (
                   <div
                     key={c.id}
                     className="h-9 w-9 rounded-full border-2 border-white bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold"
@@ -91,19 +93,14 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
                     {initials(c.name)}
                   </div>
                 ))}
-              </div>
-
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-900 truncate">
-                  {contributors
-                    .slice(0, 3)
-                    .map((c) => c.name)
-                    .join(", ")}
-                  {contributors.length > 3 ? ` +${contributors.length - 3}` : ""}
-                </div>
-                <div className="text-xs text-slate-500">
-                  Curated by {ownerName} <span className="text-slate-400">{ownerHandle}</span>
-                </div>
+                {contributors.length > 4 && (
+                  <div
+                    className="h-9 w-9 rounded-full border-2 border-white bg-slate-100 text-slate-700 flex items-center justify-center text-[11px] font-semibold"
+                    title={`${contributors.length - 4} more contributor${contributors.length - 4 === 1 ? "" : "s"}`}
+                  >
+                    +{contributors.length - 4}
+                  </div>
+                )}
               </div>
             </div>
           ) : (
