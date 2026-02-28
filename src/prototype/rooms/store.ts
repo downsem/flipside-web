@@ -4,6 +4,9 @@ import type { TimelineId } from "@/theme/timelines";
 export const ROOM_SEED_KEY = "fs_room_seed_deck_v0";
 const ROOMS_KEY = "fs_rooms_v0";
 
+export const ROOM_DECK_ID_KEY = "fs_room_deck_id_v0";
+const ROOMS_BY_DECK_KEY = "fs_rooms_by_deck_v0";
+
 const ORDER: TimelineId[] = ["calm", "bridge", "cynical", "opposite", "playful"];
 
 export type SeedLens = "anchor" | TimelineId;
@@ -68,6 +71,65 @@ function saveRooms(list: Room[]) {
   localStorage.setItem(ROOMS_KEY, JSON.stringify(list));
 }
 
+
+type RoomsByDeckIndex = Record<string, string>;
+
+function loadRoomsByDeckIndex(): RoomsByDeckIndex {
+  if (typeof window === "undefined") return {};
+  return (
+    safeJsonParse<RoomsByDeckIndex>(localStorage.getItem(ROOMS_BY_DECK_KEY)) ??
+    {}
+  );
+}
+
+function saveRoomsByDeckIndex(index: RoomsByDeckIndex) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ROOMS_BY_DECK_KEY, JSON.stringify(index));
+}
+
+/**
+ * O(1) lookup: returns the Room ID linked to a deck, if any.
+ */
+export function getRoomIdForDeck(deckId: string): string | null {
+  if (!deckId) return null;
+  const idx = loadRoomsByDeckIndex();
+  return idx[deckId] ?? null;
+}
+
+/**
+ * One-room-per-deck mapping (prototype).
+ */
+export function linkRoomToDeck(deckId: string, roomId: string) {
+  if (!deckId || !roomId) return;
+  const idx = loadRoomsByDeckIndex();
+  idx[deckId] = roomId;
+  saveRoomsByDeckIndex(idx);
+}
+
+export function unlinkRoomFromDeck(deckId: string) {
+  if (!deckId) return;
+  const idx = loadRoomsByDeckIndex();
+  if (!(deckId in idx)) return;
+  delete idx[deckId];
+  saveRoomsByDeckIndex(idx);
+}
+
+function pruneRoomDeckIndexByRoomId(roomId: string) {
+  if (!roomId) return;
+  const idx = loadRoomsByDeckIndex();
+  let changed = false;
+
+  for (const [deckId, rid] of Object.entries(idx)) {
+    if (rid === roomId) {
+      delete idx[deckId];
+      changed = true;
+    }
+  }
+
+  if (changed) saveRoomsByDeckIndex(idx);
+}
+
+
 export function listRooms(): Room[] {
   return loadRooms().sort((a, b) => b.createdAt - a.createdAt);
 }
@@ -87,7 +149,9 @@ export function upsertRoom(room: Room) {
 export function deleteRoom(roomId: string) {
   const list = loadRooms().filter((r) => r.id !== roomId);
   saveRooms(list);
+  pruneRoomDeckIndexByRoomId(roomId);
 }
+
 
 /**
  * Converts the People Mode deck object (draft or published) into a stable snapshot.

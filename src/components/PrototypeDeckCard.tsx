@@ -1,12 +1,18 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import PeopleDeckSwipe from "@/components/PeopleDeckSwipe";
 import type { PeopleDeckPublished } from "@/prototype/people/types";
 import { usePrototypeStore } from "@/prototype/people/store";
-import { ROOM_SEED_KEY, deckToSnapshot } from "@/prototype/rooms/store";
+import { ROOM_DECK_ID_KEY, ROOM_SEED_KEY, getRoomIdForDeck } from "@/prototype/rooms/store";
+
+function normalizeHandle(handle?: string) {
+  if (!handle) return "";
+  const h = handle.startsWith("@") ? handle.slice(1) : handle;
+  return h.trim().toLowerCase();
+}
 
 function fmtHandle(handle?: string) {
   if (!handle) return "";
@@ -27,9 +33,50 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
   const router = useRouter();
   const currentUser = usePrototypeStore((s) => s.currentUser);
 
-  const isOwner = useMemo(() => {
+  const [roomId, setRoomId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Keep in sync even if this card/page isn't fully unmounted between navigations.
+    const sync = () => setRoomId(getRoomIdForDeck(deck.id));
+    sync();
+    window.addEventListener("focus", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("focus", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, [deck.id]);
+
+  const isContributor = useMemo(() => {
     if (!currentUser) return false;
-    return (deck as any).ownerHandle === currentUser.handle;
+
+    const keys = new Set<string>();
+
+    // deck owner / curator
+    if ((deck as any)?.ownerUserId) keys.add((deck as any).ownerUserId);
+    const ownerHandle = normalizeHandle((deck as any)?.ownerHandle);
+    if (ownerHandle) keys.add(ownerHandle);
+
+    const addUser = (u: any) => {
+      if (!u) return;
+      if (u.id) keys.add(u.id);
+      if (u.uid) keys.add(u.uid);
+      if (u.userId) keys.add(u.userId);
+      const h = normalizeHandle(u.handle ?? u.username);
+      if (h) keys.add(h);
+    };
+
+    // anchor author (optional but included for contributor check)
+    addUser((deck as any)?.anchor?.author);
+
+    // matched/locked lens authors (calm/bridge/cynical/opposite/playful)
+    const locked = (deck as any)?.locked ?? {};
+    Object.values(locked).forEach((p: any) => addUser(p?.author));
+
+    const meId = currentUser.id ?? (currentUser as any).uid ?? (currentUser as any).userId;
+    const meHandle = normalizeHandle(currentUser.handle);
+
+    return (meId ? keys.has(meId) : false) || (meHandle ? keys.has(meHandle) : false);
   }, [currentUser, deck]);
 
   // Social proof: highlight *other* contributors instead of the deck builder.
@@ -62,14 +109,20 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
     return Array.from(seen.values());
   }, [deck]);
 
-  function startRoomFromDeck() {
+  function createRoomFromDeck() {
     try {
-      const snap = deckToSnapshot(deck);
-      sessionStorage.setItem(ROOM_SEED_KEY, JSON.stringify(snap));
+      // Store the *full deck* (includes id). The room creator is already defensive.
+      sessionStorage.setItem(ROOM_SEED_KEY, JSON.stringify(deck));
+      sessionStorage.setItem(ROOM_DECK_ID_KEY, deck.id);
     } catch {
       // If sessionStorage fails for some reason, still route to the form.
     }
     router.push("/prototype/rooms/new");
+  }
+
+  function viewRoom() {
+    if (!roomId) return;
+    router.push(`/prototype/rooms/${roomId}`);
   }
 
   const ownerName = (deck as any)?.ownerName ?? currentUser?.name ?? "Guest";
@@ -115,13 +168,22 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {isOwner && (
+          {!roomId && isContributor && (
             <button
               type="button"
-              onClick={startRoomFromDeck}
+              onClick={createRoomFromDeck}
               className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm hover:bg-slate-50"
             >
-              Start Room
+              Create Room
+            </button>
+          )}
+          {roomId && (
+            <button
+              type="button"
+              onClick={viewRoom}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm hover:bg-slate-50"
+            >
+              View Room
             </button>
           )}
           <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm">

@@ -2,16 +2,20 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { isPeopleModeActive, onPeopleModeChange } from "@/people/mode";
 import { buildMockPosts, TOPICS } from "@/prototype/people/mockData";
 import {
   ROOM_SEED_KEY,
+  ROOM_DECK_ID_KEY,
   createRoomFromDeck,
   deckToSnapshot,
+  linkRoomToDeck,
 } from "@/prototype/rooms/store";
 
 export default function NewRoomClient() {
+  const router = useRouter();
   const [rawDeck, setRawDeck] = useState<any | null>(null);
   const [title, setTitle] = useState("");
   const [tutorialActive, setTutorialActive] = useState(false);
@@ -62,15 +66,29 @@ export default function NewRoomClient() {
     };
 
     sessionStorage.setItem(ROOM_SEED_KEY, JSON.stringify(deck));
+    // So the demo path still exercises the same deck→room mapping behavior.
+    sessionStorage.setItem(ROOM_DECK_ID_KEY, deck.id);
     setRawDeck(deck);
   }
 
   function create() {
     if (!rawDeck) return;
+
     const room = createRoomFromDeck({ title, rawDeck });
-    // optional: clear the seed so you don't accidentally reuse it
+
+    // Link this room to the originating deck (if any)
+    try {
+      const deckId = sessionStorage.getItem(ROOM_DECK_ID_KEY) ?? rawDeck?.id;
+      if (deckId) linkRoomToDeck(deckId, room.id);
+      sessionStorage.removeItem(ROOM_DECK_ID_KEY);
+    } catch {
+      // ignore
+    }
+
+    // clear the seed so you don't accidentally reuse it
     sessionStorage.removeItem(ROOM_SEED_KEY);
-    window.location.href = `/prototype/rooms/${room.id}`;
+
+    router.push(`/prototype/rooms/${room.id}`);
   }
 
   return (
@@ -96,7 +114,7 @@ export default function NewRoomClient() {
           <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <div className="text-lg font-semibold text-slate-900">No deck found</div>
             <p className="mt-2 text-sm text-slate-600">
-              Go to People Mode, complete a deck (5/5 locked), then click “Start Room.”
+              Go to People Mode, complete a deck (5/5 locked), then click “Create Room.”
             </p>
             <div className="mt-4 flex items-center gap-3">
               <Link
