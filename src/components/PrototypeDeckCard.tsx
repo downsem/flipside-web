@@ -131,27 +131,27 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           {contributors.length > 0 ? (
-            <div className="flex items-center gap-3">
-              <div className="text-xs font-medium text-slate-500 shrink-0">Contributors</div>
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:block text-xs font-medium text-slate-500 shrink-0">Contributors</div>
               <div className="flex -space-x-2">
-                {contributors.slice(0, 4).map((c) => (
+                {contributors.slice(0, 3).map((c) => (
                   <div
                     key={c.id}
-                    className="h-9 w-9 rounded-full border-2 border-white bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold"
+                    className="h-8 w-8 sm:h-9 sm:w-9 rounded-full border-2 border-white bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold"
                     title={`${c.name} ${fmtHandle(c.handle)}`.trim()}
                   >
                     {initials(c.name)}
                   </div>
                 ))}
-                {contributors.length > 4 && (
+                {contributors.length > 3 && (
                   <div
-                    className="h-9 w-9 rounded-full border-2 border-white bg-slate-100 text-slate-700 flex items-center justify-center text-[11px] font-semibold"
-                    title={`${contributors.length - 4} more contributor${contributors.length - 4 === 1 ? "" : "s"}`}
+                    className="h-8 w-8 sm:h-9 sm:w-9 rounded-full border-2 border-white bg-slate-100 text-slate-700 flex items-center justify-center text-[11px] font-semibold"
+                    title={`${contributors.length - 3} more contributor${contributors.length - 3 === 1 ? "" : "s"}`}
                   >
-                    +{contributors.length - 4}
+                    +{contributors.length - 3}
                   </div>
                 )}
               </div>
@@ -186,9 +186,6 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
               View Room
             </button>
           )}
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm">
-            People
-          </span>
         </div>
       </div>
 
