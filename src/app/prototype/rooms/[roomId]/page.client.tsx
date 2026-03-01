@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { AppShell } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/Button";
@@ -47,7 +47,6 @@ function stripRespondingTo(text: string) {
 export default function RoomClient({ roomId }: { roomId: string }) {
   const [room, setRoom] = useState<Room | null>(null);
   const [tab, setTab] = useState<Tab>("chat");
-  const [name, setName] = useState("You");
   const [input, setInput] = useState("");
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -73,7 +72,10 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     setRoom(getRoom(roomId));
   }
 
-  const normalizedName = useMemo(() => name.trim().toLowerCase(), [name]);
+  // Prototype-only: keep identity simple and remove the extra "Name" UI.
+  // Later, swap this to auth displayName once Rooms are persisted.
+  const name = "You";
+  const normalizedName = "you";
 
   if (!room) {
     return (
@@ -157,20 +159,10 @@ export default function RoomClient({ roomId }: { roomId: string }) {
         {/* Chat */}
         {tab === "chat" && (
           <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="text-xs text-neutral-500">Name</div>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-32 rounded-full border border-neutral-200 px-3 py-2 text-sm"
-                placeholder="You"
-              />
-            </div>
-
             {/* Messages */}
             <div
               ref={scrollRef}
-              className="h-[60vh] sm:h-[420px] overflow-auto rounded-[var(--radius-card)] border border-neutral-200 bg-neutral-50 px-3 py-4"
+              className="h-[60dvh] sm:h-[420px] overflow-auto px-1 py-2"
             >
               <div className="space-y-3">
                 {room.messages.map((m, i) => {
@@ -183,12 +175,13 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                   const rowDirection = isYou ? "flex-row-reverse" : "flex-row";
 
                   const bubbleClass = clsx(
-                    "max-w-[88%] sm:max-w-[780px] rounded-[var(--radius-card)] border px-4 py-3 shadow-sm",
+                    // Keep it feeling like a chat (bubbles), not nested cards.
+                    "max-w-[88%] sm:max-w-[780px] rounded-[22px] px-4 py-3",
                     isSeed
-                      ? "bg-white border-neutral-200"
+                      ? "bg-white border border-neutral-200"
                       : isYou
-                      ? "bg-neutral-900 border-neutral-900 text-white"
-                      : "bg-white border-neutral-200"
+                      ? "bg-neutral-900 text-white"
+                      : "bg-neutral-100 text-neutral-900"
                   );
 
                   const seedTintWrap = isSeed
