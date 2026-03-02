@@ -34,28 +34,34 @@ export function LensTabs({
         className
       )}
     >
-      {/* Mobile: dot-based (no labels), still tappable */}
+      {/* Mobile: dots + current lens label */}
       <div className="flex items-center justify-between gap-3 sm:hidden">
-        <div className="flex items-center">
-          {LENSES.map((lens, i) => {
-            const active = i === index;
-            return (
-              <button
-                key={lens}
-                type="button"
-                onClick={() => onChange(lens)}
-                aria-label={lens}
-                className="p-2"
-              >
-                <span
-                  className={cn(
-                    "block h-2 w-2 rounded-full",
-                    active ? "bg-neutral-900" : "bg-neutral-200"
-                  )}
-                />
-              </button>
-            );
-          })}
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex items-center">
+            {LENSES.map((lens, i) => {
+              const active = i === index;
+              return (
+                <button
+                  key={lens}
+                  type="button"
+                  onClick={() => onChange(lens)}
+                  aria-label={lens}
+                  className="p-2"
+                >
+                  <span
+                    className={cn(
+                      "block h-2 w-2 rounded-full",
+                      active ? "bg-neutral-900" : "bg-neutral-200"
+                    )}
+                  />
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="min-w-0 truncate text-[12px] font-medium text-neutral-700">
+            {LENSES[index]}
+          </div>
         </div>
 
         <div className="shrink-0 text-[var(--text-sm)] text-neutral-600">

@@ -110,7 +110,12 @@ export default function PostCard({ post, selectedTimeline }: PostCardProps) {
           )}
 
           <div className="flex flex-col leading-tight">
-            <span className="font-medium text-sm">{displayName}</span>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm">{displayName}</span>
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                AI
+              </span>
+            </div>
             <span className="text-xs text-slate-500">{subline}</span>
           </div>
         </div>
