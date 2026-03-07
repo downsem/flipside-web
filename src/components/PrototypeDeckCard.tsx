@@ -6,7 +6,12 @@ import { useRouter } from "next/navigation";
 import PeopleDeckSwipe from "@/components/PeopleDeckSwipe";
 import type { PeopleDeckPublished } from "@/prototype/people/types";
 import { usePrototypeStore } from "@/prototype/people/store";
-import { ROOM_DECK_ID_KEY, ROOM_SEED_KEY, getRoomIdForDeck } from "@/prototype/rooms/store";
+import {
+  ROOM_DECK_ID_KEY,
+  ROOM_SEED_KEY,
+  deleteRoom,
+  getRoomIdForDeck,
+} from "@/prototype/rooms/store";
 
 function normalizeHandle(handle?: string) {
   if (!handle) return "";
@@ -32,6 +37,7 @@ function initials(name?: string) {
 export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
   const router = useRouter();
   const currentUser = usePrototypeStore((s) => s.currentUser);
+  const deletePeopleDeck = usePrototypeStore((s) => s.deletePeopleDeck);
 
   const [roomId, setRoomId] = useState<string | null>(null);
 
@@ -125,9 +131,29 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
     router.push(`/prototype/rooms/${roomId}`);
   }
 
+  async function handleDeleteDeck() {
+    // Mirror main feed behavior: only owner can delete.
+    if (!currentUser || (deck as any)?.ownerUserId !== currentUser.id) return;
+    if (!confirm("Delete this People deck? This cannot be undone.")) return;
+
+    // If a room was created from this deck, remove it too to avoid orphaned rooms.
+    try {
+      const rid = roomId ?? getRoomIdForDeck(deck.id);
+      if (rid) deleteRoom(rid);
+    } catch {
+      // no-op
+    }
+
+    deletePeopleDeck(deck.id);
+  }
+
   const ownerName = (deck as any)?.ownerName ?? currentUser?.name ?? "Guest";
   const ownerHandle = fmtHandle((deck as any)?.ownerHandle ?? currentUser?.handle);
   const publishedAt = (deck as any)?.publishedAt ?? (deck as any)?.createdAt ?? Date.now();
+
+  const isOwner = (deck as any)?.ownerUserId && currentUser?.id
+    ? (deck as any).ownerUserId === currentUser.id
+    : false;
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -168,6 +194,15 @@ export function PrototypeDeckCard({ deck }: { deck: PeopleDeckPublished }) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {isOwner && (
+            <button
+              type="button"
+              onClick={handleDeleteDeck}
+              className="text-xs text-red-600 underline"
+            >
+              Delete
+            </button>
+          )}
           {!roomId && isContributor && (
             <button
               type="button"

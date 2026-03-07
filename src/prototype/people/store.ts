@@ -182,6 +182,15 @@ export const usePrototypeStore = create<PrototypeState>((set, get) => ({
     return published;
   },
 
+  deletePeopleDeck: (deckId: string) => {
+    if (!deckId) return;
+    set((s) => ({
+      peopleDecks: s.peopleDecks.filter((d: any) => d.id !== deckId),
+      // If the current draft references this deck id (unlikely), clear it.
+      peopleDraft: (s.peopleDraft as any)?.id === deckId ? null : s.peopleDraft,
+    }));
+  },
+
   voteOnPost: (postId: string, value: 1 | -1) => {
     set((s) => ({
       posts: s.posts.map((p) =>

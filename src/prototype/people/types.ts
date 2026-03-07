@@ -76,6 +76,9 @@ export type PrototypeState = {
 
   publishDraftPeopleDeck: () => PeopleDeckPublished | null;
 
+  // deck management
+  deletePeopleDeck: (deckId: string) => void;
+
   // engagement
   voteOnPost: (postId: string, value: 1 | -1) => void;
   addReplyToPost: (postId: string, text: string) => void;
