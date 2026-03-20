@@ -104,8 +104,9 @@ export default function NewRoomClient() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link href="/prototype/rooms" className="text-sm underline text-slate-700">
-              Back to Rooms
+            {/* People Mode lives at /prototype. This link should return users to the People feed. */}
+            <Link href="/prototype" className="text-sm underline text-slate-700">
+              Back to People Mode
             </Link>
           </div>
         </header>
@@ -118,7 +119,7 @@ export default function NewRoomClient() {
             </p>
             <div className="mt-4 flex items-center gap-3">
               <Link
-                href="/prototype/people-mode"
+                href="/prototype"
                 className="inline-flex rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white"
               >
                 Go to People Mode
