@@ -32,13 +32,13 @@ export function Button({
   const variants =
     {
       primary:
-        "rounded-[var(--radius-pill)] bg-neutral-900 text-white hover:opacity-90",
+        "rounded-[var(--radius-pill)] bg-br-primary text-white hover:bg-br-dark",
       secondary:
-        "rounded-[var(--radius-pill)] bg-neutral-100 text-neutral-900 hover:bg-neutral-200",
+        "rounded-[var(--radius-pill)] border border-br-border bg-br-white text-br-ink hover:bg-br-neutral",
       ghost:
-        "rounded-[var(--radius-pill)] bg-transparent text-neutral-900 hover:bg-neutral-100",
+        "rounded-[var(--radius-pill)] bg-transparent text-br-ink hover:bg-br-white",
     }[variant] ??
-    "rounded-[var(--radius-pill)] bg-neutral-900 text-white hover:opacity-90";
+    "rounded-[var(--radius-pill)] bg-br-primary text-white hover:bg-br-dark";
 
   return (
     <button
