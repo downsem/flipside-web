@@ -17,34 +17,6 @@ import { Button } from "@/components/ui/Button";
 
 type SourceType = "original" | "import-other";
 
-type DemoLens = {
-  label: string;
-  text: string;
-};
-
-const DEMO_LENSES: DemoLens[] = [
-  {
-    label: "Calm",
-    text: "There may be good reasons people disagree here. Slow down and look at the tradeoffs before picking a side.",
-  },
-  {
-    label: "Bridge",
-    text: "Both sides may care about the same outcome, even if they are arguing about the best path to get there.",
-  },
-  {
-    label: "Cynical",
-    text: "Sometimes the loudest version of a debate is more about status and signaling than solving the real issue.",
-  },
-  {
-    label: "Opposite",
-    text: "What if the strongest argument is actually the reverse of your first instinct, and the current consensus is missing something important?",
-  },
-  {
-    label: "Playful",
-    text: "Imagine this take getting tossed into a group chat and immediately coming back with five wildly different spins.",
-  },
-];
-
 function detectPlatform(url: string): string {
   try {
     const host = new URL(url).hostname.toLowerCase();
@@ -66,7 +38,6 @@ export default function AddPage() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeDemoLens, setActiveDemoLens] = useState<string>(DEMO_LENSES[0].label);
 
   const [hasSourceLink, setHasSourceLink] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
@@ -153,37 +124,15 @@ export default function AddPage() {
 
   const canSubmit = text.trim().length > 0 && !busy;
   const showSignInBox = !user || !!user?.isAnonymous;
-  const activeLensCopy = DEMO_LENSES.find((lens) => lens.label === activeDemoLens)?.text;
 
   return (
-    <AppShell
-      title="Create"
-      headerRight={
-        <Link href="/feed" className="text-[var(--text-sm)] underline">
-          Browse examples
-        </Link>
-      }
-    >
+    <AppShell title="Create">
       <div className="mb-4 space-y-4">
         <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="text-xl font-semibold text-neutral-900">See the other side of any idea.</div>
           <p className="mt-2 text-sm text-neutral-600">
             Paste a post, quote, or hot take and FlipSide will turn it into multiple perspectives you can swipe through in seconds.
           </p>
-          <div className="mt-4 flex gap-2">
-            <a
-              href="#create-form"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-[var(--radius-pill)] bg-neutral-900 px-4 text-sm font-medium text-white"
-            >
-              Try a Flip
-            </a>
-            <Link
-              href="/feed"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-[var(--radius-pill)] border border-neutral-200 bg-white px-4 text-sm font-medium text-neutral-800"
-            >
-              Browse examples
-            </Link>
-          </div>
         </div>
 
         <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
@@ -192,31 +141,6 @@ export default function AddPage() {
             <div className="rounded-2xl bg-neutral-50 px-3 py-3">1. Add a post</div>
             <div className="rounded-2xl bg-neutral-50 px-3 py-3">2. Explore multiple perspectives</div>
             <div className="rounded-2xl bg-neutral-50 px-3 py-3">3. Share or react to what hits</div>
-          </div>
-        </div>
-
-        <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Quick example</div>
-          <p className="mt-2 rounded-2xl bg-neutral-50 px-4 py-3 text-sm text-neutral-800">
-            “City governments should ban phones in classrooms immediately.”
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {DEMO_LENSES.map((lens) => {
-              const active = lens.label === activeDemoLens;
-              return (
-                <button
-                  key={lens.label}
-                  type="button"
-                  onClick={() => setActiveDemoLens(lens.label)}
-                  className={active ? "rounded-full bg-neutral-900 px-3 py-2 text-xs font-semibold text-white" : "rounded-full border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-700"}
-                >
-                  {lens.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-3 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-700">
-            {activeLensCopy}
           </div>
         </div>
       </div>
@@ -271,9 +195,7 @@ export default function AddPage() {
             <span className="text-slate-600">
               You can try Flipside without signing in.
               <br />
-              <span className="text-slate-500 text-xs">
-                Sign in later to keep your flips.
-              </span>
+              <span className="text-slate-500 text-xs">Sign in later to keep your flips.</span>
             </span>
             <Link
               href="/account"
