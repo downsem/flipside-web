@@ -7,7 +7,6 @@ import { cn } from "@/lib/cn";
 const TABS = [
   { href: "/feed", label: "Feed" },
   { href: "/", label: "Create", isCenter: true },
-  { href: "/prototype", label: "People" },
   { href: "/account", label: "Profile" },
 ];
 
@@ -24,7 +23,7 @@ export function BottomTabs() {
       )}
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="mx-auto grid h-14 max-w-2xl grid-cols-4 gap-2 px-3">
+      <div className="mx-auto grid h-14 max-w-2xl grid-cols-3 gap-2 px-3">
         {TABS.map((t) => {
           const active =
             pathname === t.href || (t.href !== "/" && pathname.startsWith(t.href));
@@ -37,9 +36,7 @@ export function BottomTabs() {
                 "flex items-center justify-center",
                 "min-h-[44px] rounded-[var(--radius-pill)]",
                 "text-[var(--text-sm)] font-medium",
-                // Requested: active = black, inactive = white
                 active ? "bg-neutral-900 text-white" : "bg-white text-neutral-700",
-                // Slightly emphasize center tab without changing the rule
                 t.isCenter && "font-semibold"
               )}
             >

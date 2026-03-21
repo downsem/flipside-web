@@ -17,6 +17,34 @@ import { Button } from "@/components/ui/Button";
 
 type SourceType = "original" | "import-other";
 
+type DemoLens = {
+  label: string;
+  text: string;
+};
+
+const DEMO_LENSES: DemoLens[] = [
+  {
+    label: "Calm",
+    text: "There may be good reasons people disagree here. Slow down and look at the tradeoffs before picking a side.",
+  },
+  {
+    label: "Bridge",
+    text: "Both sides may care about the same outcome, even if they are arguing about the best path to get there.",
+  },
+  {
+    label: "Cynical",
+    text: "Sometimes the loudest version of a debate is more about status and signaling than solving the real issue.",
+  },
+  {
+    label: "Opposite",
+    text: "What if the strongest argument is actually the reverse of your first instinct, and the current consensus is missing something important?",
+  },
+  {
+    label: "Playful",
+    text: "Imagine this take getting tossed into a group chat and immediately coming back with five wildly different spins.",
+  },
+];
+
 function detectPlatform(url: string): string {
   try {
     const host = new URL(url).hostname.toLowerCase();
@@ -38,12 +66,10 @@ export default function AddPage() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeDemoLens, setActiveDemoLens] = useState<string>(DEMO_LENSES[0].label);
 
-  // ✅ Single optional "original post link" input
   const [hasSourceLink, setHasSourceLink] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
-
-  // Stable auth state (avoids auth.currentUser flicker on first paint)
   const [user, setUser] = useState<any>(null);
 
   const router = useRouter();
@@ -61,11 +87,9 @@ export default function AddPage() {
     setError(null);
 
     try {
-      // Validate optional link
       const urlTrimmed = sourceUrl.trim();
       if (hasSourceLink && urlTrimmed) {
         try {
-          // throws if invalid
           new URL(urlTrimmed);
         } catch {
           setError("That link doesn't look valid. Please paste a full URL.");
@@ -78,14 +102,12 @@ export default function AddPage() {
       const sourceType: SourceType = finalSourceUrl ? "import-other" : "original";
       const sourcePlatform = finalSourceUrl ? detectPlatform(finalSourceUrl) : null;
 
-      // Ensure we always have *some* Firebase user (anonymous is fine)
       let u = auth.currentUser;
       if (!u) {
         u = await loginAnonymously();
         setUser(u);
       }
 
-      // If user is NOT anonymous, ensure profile doc exists (Google sign-in)
       if (u && !u.isAnonymous) {
         await ensureUserProfile(u);
       }
@@ -106,7 +128,6 @@ export default function AddPage() {
         authorIsAnonymous: !!u?.isAnonymous,
       });
 
-      // Call API with postId + text so rewrites get written to Firestore
       const res = await fetch("/api/flip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -118,9 +139,6 @@ export default function AddPage() {
 
       const json = await res.json().catch(() => null);
 
-      // If rewrites fail to generate (missing env vars in Codespaces, OpenAI hiccup, etc),
-      // we still created the original post successfully — don't strand the user on Create.
-      // We'll log the error and continue to the feed.
       if (!res.ok || !json?.ok) {
         console.error("Error generating rewrites:", json ?? (await res.text()));
       }
@@ -134,26 +152,76 @@ export default function AddPage() {
   }
 
   const canSubmit = text.trim().length > 0 && !busy;
-
-  // Show sign-in CTA if not signed in OR signed in anonymously
   const showSignInBox = !user || !!user?.isAnonymous;
+  const activeLensCopy = DEMO_LENSES.find((lens) => lens.label === activeDemoLens)?.text;
 
   return (
     <AppShell
       title="Create"
       headerRight={
-        <div className="flex items-center gap-2">
-          <Link href="/prototype/create" className="text-[var(--text-sm)] underline">
-            People
-          </Link>
-          <Link href="/feed" className="text-[var(--text-sm)] underline">
-            Feed
-          </Link>
-        </div>
+        <Link href="/feed" className="text-[var(--text-sm)] underline">
+          Browse examples
+        </Link>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Text input */}
+      <div className="mb-4 space-y-4">
+        <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
+          <div className="text-xl font-semibold text-neutral-900">See the other side of any idea.</div>
+          <p className="mt-2 text-sm text-neutral-600">
+            Paste a post, quote, or hot take and FlipSide will turn it into multiple perspectives you can swipe through in seconds.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <a
+              href="#create-form"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-[var(--radius-pill)] bg-neutral-900 px-4 text-sm font-medium text-white"
+            >
+              Try a Flip
+            </a>
+            <Link
+              href="/feed"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-[var(--radius-pill)] border border-neutral-200 bg-white px-4 text-sm font-medium text-neutral-800"
+            >
+              Browse examples
+            </Link>
+          </div>
+        </div>
+
+        <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">How it works</div>
+          <div className="mt-3 grid gap-2 text-sm text-neutral-700 sm:grid-cols-3">
+            <div className="rounded-2xl bg-neutral-50 px-3 py-3">1. Add a post</div>
+            <div className="rounded-2xl bg-neutral-50 px-3 py-3">2. Explore multiple perspectives</div>
+            <div className="rounded-2xl bg-neutral-50 px-3 py-3">3. Share or react to what hits</div>
+          </div>
+        </div>
+
+        <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Quick example</div>
+          <p className="mt-2 rounded-2xl bg-neutral-50 px-4 py-3 text-sm text-neutral-800">
+            “City governments should ban phones in classrooms immediately.”
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {DEMO_LENSES.map((lens) => {
+              const active = lens.label === activeDemoLens;
+              return (
+                <button
+                  key={lens.label}
+                  type="button"
+                  onClick={() => setActiveDemoLens(lens.label)}
+                  className={active ? "rounded-full bg-neutral-900 px-3 py-2 text-xs font-semibold text-white" : "rounded-full border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-700"}
+                >
+                  {lens.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-700">
+            {activeLensCopy}
+          </div>
+        </div>
+      </div>
+
+      <form id="create-form" onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white px-4 py-3 shadow-sm">
           <textarea
             className="h-40 w-full resize-none rounded-2xl border-0 bg-transparent px-1 py-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
@@ -164,7 +232,6 @@ export default function AddPage() {
           />
         </div>
 
-        {/* ✅ Single optional link section */}
         <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm">
           <label className="inline-flex items-center gap-2 text-slate-700">
             <input
@@ -199,7 +266,6 @@ export default function AddPage() {
           Generate Flip
         </Button>
 
-        {/* Sign-in CTA */}
         {showSignInBox && (
           <div className="flex items-center justify-between rounded-[var(--radius-card)] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm">
             <span className="text-slate-600">

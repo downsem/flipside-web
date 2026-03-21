@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { auth, db } from "@/app/firebase";
@@ -17,6 +18,7 @@ type Post = any;
 type Filter = "all" | TimelineId;
 
 export default function FeedPageClient() {
+  const router = useRouter();
   const [posts, setPosts] = useState<Post[]>([]);
   const [user, setUser] = useState<any>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -109,6 +111,12 @@ export default function FeedPageClient() {
         </div>
       }
     >
+      {!err && !loading && posts.length > 0 && (
+        <div className="mb-3 rounded-[var(--radius-card)] border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-600 shadow-sm">
+          Swipe through the lenses to see how the same idea changes when the perspective changes.
+        </div>
+      )}
+
       {err && (
         <ErrorState
           description={err}
@@ -132,7 +140,7 @@ export default function FeedPageClient() {
           title="No flips yet"
           description="Be the first to add one."
           ctaLabel="Create a flip"
-          onCta={() => (window.location.href = "/")}
+          onCta={() => router.push("/")}
         />
       )}
 
