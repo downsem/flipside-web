@@ -42,7 +42,7 @@ export default function FeedPageClient() {
       (snap) => {
         const docs: Post[] = [];
         snap.forEach((d) => docs.push({ id: d.id, ...d.data() }));
-        setPosts(docs);
+        setPosts(docs.filter((post) => post?.status !== "draft"));
         setLoading(false);
       },
       (e) => {
