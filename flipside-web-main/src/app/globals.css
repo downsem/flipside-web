@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Flipside global styles */
+
+:root {
+  --tap: 48px; /* minimum tap height */
+  --radius-card: 16px;
+  --radius-pill: 9999px;
+
+  /* Backroom Brand Guide (v1.0) palette */
+  --br-neutral: #f0eeeb;
+  --br-white: #ffffff;
+  --br-primary: #553ce1;
+  --br-dark: #2d1978;
+  --br-black: #000000;
+
+  /* Typography (Backroom Brand Guide v1.0)
+     NOTE: TT Commons Classic + Garamond Classico are licensed fonts.
+     If they are not installed/served, this falls back gracefully.
+     You can later add @font-face definitions (e.g. /public/fonts) without changing usage. */
+  --font-sans: "TT Commons Classic", "TT Commons", system-ui, -apple-system,
+    BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --font-serif: "Garamond Classico", "Garamond", Georgia, serif;
+
+  /* Simple semantic aliases */
+  --br-bg: var(--br-neutral);
+  --br-surface: var(--br-white);
+  --br-ink: var(--br-dark);
+  --br-link: var(--br-primary);
+  --br-border: rgba(45, 25, 120, 0.14);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--br-bg);
+  color: var(--br-ink);
+  font-family: var(--font-sans);
+}
+
+/* Default link styling (subtle, consistent) */
+a {
+  color: var(--br-link);
+}
+
+a:hover {
+  opacity: 0.9;
+}
