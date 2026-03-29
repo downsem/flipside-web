@@ -17,6 +17,12 @@ import { Button } from "@/components/ui/Button";
 type SourceType = "original" | "import-other";
 type FlipMode = "ai" | "people";
 
+const EXAMPLE_PROMPTS = [
+  "Cities should ban cars downtown",
+  "Remote work is making people less productive",
+  "The Olympics should remove national teams",
+] as const;
+
 function detectPlatform(url: string): string {
   try {
     const host = new URL(url).hostname.toLowerCase();
@@ -41,7 +47,8 @@ export default function CreateFlipPage() {
   const [hasSourceLink, setHasSourceLink] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
   const [user, setUser] = useState<any>(null);
-  const [mode, setMode] = useState<FlipMode>("ai");
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [mode] = useState<FlipMode>("ai");
 
   const router = useRouter();
 
@@ -133,66 +140,45 @@ export default function CreateFlipPage() {
 
   return (
     <AppShell title="Create">
-      <div className="mb-4 space-y-4">
-        <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="text-xl font-semibold text-neutral-900">See the other side of any idea.</div>
-          <p className="mt-2 text-sm text-neutral-600">
-            Build an AI flip instantly or make a People deck by matching real posts across the five lenses.
-          </p>
+      <div className="mb-4 rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
+        <div className="text-2xl font-semibold tracking-tight text-neutral-900">
+          See your idea from 5 different perspectives.
         </div>
-
-        <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Mode</div>
-          <div className="mt-3 inline-flex rounded-full border border-neutral-200 bg-neutral-100 p-1">
-            <button
-              type="button"
-              onClick={() => setMode("ai")}
-              className={`min-h-[40px] rounded-full px-4 text-sm font-medium ${
-                mode === "ai" ? "bg-neutral-900 text-white" : "text-neutral-700"
-              }`}
-            >
-              AI
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("people")}
-              className={`min-h-[40px] rounded-full px-4 text-sm font-medium ${
-                mode === "people" ? "bg-neutral-900 text-white" : "text-neutral-700"
-              }`}
-            >
-              People
-            </button>
-          </div>
-          <p className="mt-3 text-sm text-neutral-600">
-            {mode === "ai"
-              ? "AI creates all five lens rewrites for you right away."
-              : "People mode turns your post into an anchor, then you match one real flip for each lens before publishing the deck."}
-          </p>
-        </div>
-
-        <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">How it works</div>
-          <div className="mt-3 grid gap-2 text-sm text-neutral-700 sm:grid-cols-3">
-            <div className="rounded-2xl bg-neutral-50 px-3 py-3">1. Add a post</div>
-            <div className="rounded-2xl bg-neutral-50 px-3 py-3">
-              {mode === "ai" ? "2. Generate the five lenses" : "2. Match one real post per lens"}
-            </div>
-            <div className="rounded-2xl bg-neutral-50 px-3 py-3">
-              {mode === "ai" ? "3. Share or react" : "3. Publish the People deck"}
-            </div>
-          </div>
-        </div>
+        <p className="mt-2 text-sm text-neutral-600">
+          Paste a thought or post and instantly see how it changes across five lenses.
+        </p>
       </div>
 
       <form id="create-form" onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white px-4 py-3 shadow-sm">
           <textarea
-            className="h-40 w-full resize-none rounded-2xl border-0 bg-transparent px-1 py-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-            placeholder="Paste a post, quote, or hot take that needs to be unpacked..."
+            className="h-32 w-full resize-none rounded-2xl border-0 bg-transparent px-1 py-1 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none"
+            placeholder="Paste a thought, opinion, or post..."
             value={text}
             onChange={(e) => setText(e.target.value)}
             disabled={busy}
           />
+        </div>
+
+        <Button type="submit" loading={busy} disabled={!canSubmit} className="w-full">
+          Flip it
+        </Button>
+
+        <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Try one</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {EXAMPLE_PROMPTS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => setText(prompt)}
+                disabled={busy}
+                className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm">
@@ -225,16 +211,12 @@ export default function CreateFlipPage() {
 
         {error && <p className="text-xs text-red-600">{error}</p>}
 
-        <Button type="submit" loading={busy} disabled={!canSubmit} className="w-full">
-          {mode === "ai" ? "Generate Flip" : "Match Flips"}
-        </Button>
-
         {showSignInBox && (
           <div className="flex items-center justify-between rounded-[var(--radius-card)] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm">
             <span className="text-slate-600">
               You can try Flipside without signing in.
               <br />
-              <span className="text-slate-500 text-xs">Sign in later to keep your flips.</span>
+              <span className="text-xs text-slate-500">Sign in later to keep your flips.</span>
             </span>
             <Link
               href="/account"
@@ -245,6 +227,26 @@ export default function CreateFlipPage() {
           </div>
         )}
       </form>
+
+      <div className="mt-4 rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setShowHowItWorks((prev) => !prev)}
+          className="flex w-full items-center justify-between text-left"
+          aria-expanded={showHowItWorks}
+        >
+          <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Learn more</span>
+          <span className="text-sm font-medium text-neutral-700">{showHowItWorks ? "Hide" : "How it works"}</span>
+        </button>
+
+        {showHowItWorks && (
+          <div className="mt-3 grid gap-2 text-sm text-neutral-700">
+            <div className="rounded-2xl bg-neutral-50 px-3 py-3">1. Paste a post, opinion, or idea.</div>
+            <div className="rounded-2xl bg-neutral-50 px-3 py-3">2. Flipside generates five lens versions instantly.</div>
+            <div className="rounded-2xl bg-neutral-50 px-3 py-3">3. Swipe, compare, and share the version you want.</div>
+          </div>
+        )}
+      </div>
     </AppShell>
   );
 }
