@@ -4,7 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/Button";
-import { auth, db, serverTs, ensureUserProfile, loginAnonymously } from "@/app/firebase";
+import {
+  auth,
+  db,
+  serverTs,
+  ensureUserProfile,
+  loginAnonymously,
+} from "@/app/firebase";
 import { collection, doc, setDoc } from "firebase/firestore";
 
 export default function Page() {
@@ -50,7 +56,7 @@ export default function Page() {
   }
 
   return (
-    <AppShell>
+    <AppShell title="Create">
       <div className="max-w-xl mx-auto px-4 pt-6 space-y-4">
         {/* Headline */}
         <h1 className="text-2xl font-semibold">
