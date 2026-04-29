@@ -123,7 +123,7 @@ export default function CreateFlipPage() {
           console.error("Error generating rewrites:", json ?? (await res.text()));
         }
 
-        router.push("/feed");
+        router.push(`/post/${postRef.id}`);
         return;
       }
 
