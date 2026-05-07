@@ -1,8 +1,11 @@
 // src/app/api/flip/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { TIMELINE_LIST } from "@/theme/timelines";
-import type { TimelineId } from "@/theme/timelines";
+import {
+  GLOBAL_REWRITE_SYSTEM_PROMPT,
+  TIMELINE_LIST,
+  type TimelineId,
+} from "@/theme/timelines";
 import { getAdminDb, adminFieldValue } from "@/lib/firebaseAdmin";
 
 // NOTE: Do NOT initialize the OpenAI client at module-load time.
@@ -32,7 +35,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ Make missing env issues obvious instead of silently failing
     if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
       return NextResponse.json(
         {
@@ -77,10 +79,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // Length targeting: keep rewrites within ±10% of original word count (with a small floor)
+    // Keep outputs concise, but leave enough room for human rhythm and behavioral realism.
     const wc = wordCount(text);
-    const minWords = Math.max(8, Math.floor(wc * 0.9));
-    const maxWords = Math.max(minWords + 2, Math.ceil(wc * 1.1));
+    const minWords = Math.max(5, Math.floor(wc * 0.65));
+    const maxWords = Math.max(minWords + 5, Math.ceil(wc * 1.4));
 
     const results = await Promise.all(
       TIMELINE_LIST.map(async (timeline) => {
@@ -93,18 +95,19 @@ export async function POST(req: Request) {
               {
                 role: "system",
                 content:
-                  "You rewrite social media posts into different lenses.\n" +
-                  "Output rules (must follow):\n" +
-                  `- Match the original length: target ${wc} words; must be between ${minWords} and ${maxWords} words.\n` +
-                  "- Keep it tweet-like: 1–3 short sentences.\n" +
-                  "- No preamble, no labels, no bullet points, no quotes around the output.\n" +
-                  "- No hashtags. No emojis.\n" +
-                  "- Preserve the original topic and intent; only change framing/tone per lens.",
+                  GLOBAL_REWRITE_SYSTEM_PROMPT +
+                  "\n\nFORMAT RULES:\n" +
+                  `- Aim for roughly ${wc} words; acceptable range is ${minWords}–${maxWords} words.\n` +
+                  "- Usually 1–3 short sentences. Sentence fragments are okay.\n" +
+                  "- Output only the rewritten post text.\n" +
+                  "- No labels, no bullets, no preamble, no quotation marks around the output.\n" +
+                  "- No hashtags unless the original post used them naturally.\n" +
+                  "- Preserve the same core idea. Change the human perspective, not the topic.",
               },
               {
                 role: "system",
                 content:
-                  `Current lens: "${timeline.label}".\n` +
+                  `Current lens: "${timeline.label}". Do not mention this lens by name.\n\n` +
                   `Lens instructions:\n${timeline.prompt}`,
               },
               {
@@ -112,7 +115,10 @@ export async function POST(req: Request) {
                 content: `Original post:\n${text}`,
               },
             ],
-            max_tokens: 220,
+            max_tokens: 280,
+            temperature: 0.98,
+            presence_penalty: 0.35,
+            frequency_penalty: 0.25,
           });
 
           let rawContent: any = completion.choices[0]?.message?.content ?? "";
@@ -137,23 +143,25 @@ export async function POST(req: Request) {
                 {
                   role: "system",
                   content:
-                    "Revise the text to meet strict length + format rules.\n" +
-                    `- Must be between ${minWords} and ${maxWords} words.\n` +
-                    "- 1–3 short sentences.\n" +
-                    "- No hashtags. No emojis.\n" +
-                    "- Keep the same meaning and same lens.\n" +
-                    "- Output ONLY the revised post text.",
+                    GLOBAL_REWRITE_SYSTEM_PROMPT +
+                    "\n\nRevise the draft only enough to fit the format.\n" +
+                    `- Keep it between ${minWords} and ${maxWords} words.\n` +
+                    "- Keep the same human instinct/personality.\n" +
+                    "- Keep the same core idea.\n" +
+                    "- Do not polish away the human rhythm.\n" +
+                    "- Output only the revised post text.",
                 },
                 {
                   role: "system",
                   content:
-                    `Lens: "${timeline.label}".\n` +
+                    `Lens: "${timeline.label}". Do not mention this lens by name.\n\n` +
                     `Lens instructions:\n${timeline.prompt}`,
                 },
                 { role: "user", content: `Original post:\n${text}` },
                 { role: "user", content: `Draft rewrite to fix:\n${finalText}` },
               ],
-              max_tokens: 220,
+              max_tokens: 280,
+              temperature: 0.8,
             });
 
             let fixed: any = fix.choices[0]?.message?.content ?? "";
@@ -190,7 +198,6 @@ export async function POST(req: Request) {
             err
           );
 
-          // Best-effort stub write
           try {
             await adminDb
               .collection("posts")
@@ -229,7 +236,6 @@ export async function POST(req: Request) {
         ok: false,
         partialFailure: true,
         details: [],
-        // ✅ surface real message so you can fix it fast
         error: err?.message ?? "Internal error generating rewrites",
       },
       { status: 200 }

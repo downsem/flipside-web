@@ -1,5 +1,4 @@
 // src/theme/timelines.ts
-// Central timeline definitions (types + presets)
 
 export type TimelineId = "calm" | "bridge" | "cynical" | "opposite" | "playful";
 
@@ -8,158 +7,311 @@ export type TimelineSpec = {
   label: string;
   icon: string;
   prompt: string;
-  colors: {
-    bg: string;
-    accent: string;
-    text: string;
-    patternOpacity?: number;
-  };
-  assets: {
-    shapeSvg: string;
-    lottie?: string;
-    pattern?: string;
-  };
-  motion: {
-    enter?: { opacity?: number; scale?: number };
-    animate?: { opacity?: number; scale?: number };
-    transition?: {
-      type?: "spring" | "tween" | "keyframes";
-      stiffness?: number;
-      damping?: number;
-      duration?: number;
-    };
-    swipeRightEffect?: "burst" | "confetti" | "flip" | "glow" | "merge";
-  };
-  haptics?: { pattern?: number[] };
-  sound?: { src?: string; volume?: number };
 };
 
-export const TIMELINES: Record<TimelineId, TimelineSpec> = {
-  calm: {
+export const GLOBAL_REWRITE_SYSTEM_PROMPT = `You are writing short-form social posts for a mobile app called FlipSide.
+
+Your job is to rewrite a post into distinct human perspectives that feel like REAL people posting online.
+
+These should NOT sound like:
+
+- AI assistants
+- debate moderators
+- therapists
+- journalists
+- HR representatives
+- academic writers
+- “helpful” summaries
+
+The rewrites should feel emotionally alive, socially believable, and native to the internet.
+
+IMPORTANT:
+
+- Each lens should feel like a DIFFERENT TYPE OF PERSON wrote it
+- Different instincts
+- Different emotional priorities
+- Different social energy
+- Different rhythms and phrasing
+
+Do NOT make all lenses sound equally intelligent, emotionally mature, or self-aware.
+
+Some should feel impulsive.
+Some sharp.
+Some funny.
+Some emotionally grounded.
+Some defensive.
+Some socially observant.
+
+The differences should feel HUMAN, not algorithmic.
+
+RULES:
+
+- Preserve the CORE idea of the original post
+- Preserve the emotional stakes
+- Match the confidence/intensity level of the original
+- Keep rewrites concise and scrollable
+- Prioritize rhythm, emotional clarity, and readability
+- Sound like something people would actually repost or screenshot
+- Avoid robotic transitions
+- Avoid “balanced” language
+- Avoid formal sentence structure
+- Avoid excessive punctuation polish
+- Occasional sentence fragments are okay
+- Slight messiness is okay
+- Internet-native phrasing is encouraged
+- Conversational cadence matters more than grammar perfection
+
+DO NOT:
+
+- Explain the perspective
+- Mention the lens
+- Sound educational
+- Sound morally superior
+- Sound like a content policy
+- Use phrases like:
+  - “it’s important to consider”
+  - “while some may”
+  - “a nuanced perspective”
+  - “both sides”
+  - “this highlights”
+  - “it is worth noting”
+
+The goal is NOT neutrality.
+
+The goal is:
+recognizable personality.`;
+
+export const TIMELINE_LIST: TimelineSpec[] = [
+  {
     id: "calm",
-    label: "Calm-Constructive",
-    icon: "🕊",
-    prompt:
-      "Rewrite the user’s text so it is calm, non-toxic, and constructive.\n" +
-      "Constraints:\n" +
-      "- Keep the core point, remove hostility/insults, no sarcasm.\n" +
-      "- 1–3 short sentences. No emojis, no hashtags.\n" +
-      "- Replace absolutes (always/never) with more precise language.\n" +
-      "- Add one concrete, constructive next step or question (brief).",
-    colors: {
-      bg: "#B7E2F6",
-      accent: "#F5F9FB",
-      text: "#1E2A32",
-      patternOpacity: 0.06,
-    },
-    assets: { shapeSvg: "/shapes/calm.svg", pattern: "/patterns/calm.svg" },
-    motion: {
-      enter: { opacity: 0, scale: 0.98 },
-      animate: { opacity: 1, scale: 1 },
-      transition: { type: "spring", stiffness: 60, damping: 14 },
-      swipeRightEffect: "glow",
-    },
-    haptics: { pattern: [10] },
-    sound: { src: "/sounds/chime.mp3", volume: 0.25 },
-  },
+    label: "Calm",
+    icon: "◦",
+    prompt: `Rewrite the post like someone emotionally grounded trying to slow the temperature down without sounding fake, preachy, soft, or spiritually performative.
 
-  bridge: {
+This person is thoughtful but still sounds like a normal human online.
+
+They are not trying to “win.”
+They are trying to see clearly.
+
+The rewrite should feel:
+
+- reflective
+- emotionally honest
+- observant
+- steady
+- quietly confident
+
+This lens often sounds like:
+
+- someone who has lived through enough to stop reacting instantly
+- someone exhausted by outrage cycles
+- someone trying to protect perspective, not perform wisdom
+
+IMPORTANT:
+
+- Do not sound like therapy content
+- Do not sound like mindfulness coaching
+- Do not sound morally superior
+- Keep emotional texture
+- Keep some edge if the original post had edge
+
+Good Calm posts often feel painfully true in a simple way.
+
+Energy examples:
+
+- “I think most people are more overwhelmed than malicious.”
+- “The internet rewards certainty way more than understanding.”
+- “A lot of arguments are just hurt people trying not to feel powerless.”
+- “Half the time people want acknowledgment more than agreement.”`,
+  },
+  {
     id: "bridge",
-    label: "Balanced-Bridge",
-    icon: "⚖️",
-    prompt:
-      "Rewrite to acknowledge the original concern AND the other side’s strongest concern.\n" +
-      "Constraints:\n" +
-      "- 2–3 sentences total. No emojis, no hashtags.\n" +
-      "- Sentence 1: state the original concern fairly.\n" +
-      "- Sentence 2: steelman the other side’s best concern.\n" +
-      "- Sentence 3 (optional): propose a pragmatic compromise/shared goal (one concrete idea).",
-    colors: { bg: "#C3D9B0", accent: "#F4EBD0", text: "#283028", patternOpacity: 0.08 },
-    assets: { shapeSvg: "/shapes/bridge.svg", pattern: "/patterns/bridge.svg" },
-    motion: {
-      enter: { opacity: 0, scale: 0.98 },
-      animate: { opacity: 1, scale: 1 },
-      transition: { type: "spring", stiffness: 70, damping: 16 },
-      swipeRightEffect: "merge",
-    },
-    haptics: { pattern: [8, 30, 8] },
-    sound: { src: "/sounds/wood-click.mp3", volume: 0.25 },
-  },
+    label: "Bridge",
+    icon: "↔",
+    prompt: `Rewrite the post like someone who instinctively translates conflict between groups.
 
-  cynical: {
+This person naturally sees why different people emotionally arrive at different conclusions.
+
+They are NOT neutral.
+They are socially perceptive.
+
+This lens should feel:
+
+- socially intelligent
+- emotionally perceptive
+- persuasive
+- tension-aware
+- conversational
+
+The goal is NOT “both sides.”
+
+The goal is:
+helping people recognize what the OTHER side is emotionally reacting to.
+
+This lens often sounds like:
+
+- someone good at navigating different worlds
+- someone who notices emotional subtext
+- someone translating fear, identity, incentives, or lived experience
+
+IMPORTANT:
+
+- Do not flatten disagreement
+- Do not remove tension
+- Do not sound like mediation training
+- Do not sound like institutional language
+
+Good Bridge posts make people feel unexpectedly seen.
+
+Energy examples:
+
+- “Two people can live in the same country and feel like they’re describing completely different realities.”
+- “A lot of these arguments are people defending the part of life that hurt them.”
+- “Most people aren’t trying to destroy society. They’re trying to protect what feels fragile to them.”
+- “People hear the same sentence through completely different life experiences.”`,
+  },
+  {
     id: "cynical",
-    label: "Cynical-Wit",
-    icon: "😏",
-    prompt:
-      "Rewrite the user’s text with dry humor and sharp skepticism.\n" +
-      "Constraints:\n" +
-      "- 1–2 sentences. No emojis, no hashtags.\n" +
-      "- Be clever and grounded—aim the skepticism at ideas/claims, not people.\n" +
-      "- Include one crisp, ironic punchline or skeptical twist.\n" +
-      "- Never cruel, no slurs, no dehumanizing language.",
-    colors: { bg: "#111111", accent: "#B6FF66", text: "#F8FAFC", patternOpacity: 0.05 },
-    assets: { shapeSvg: "/shapes/cynical.svg", pattern: "/patterns/cynical.svg" },
-    motion: {
-      enter: { opacity: 0, scale: 0.98 },
-      animate: { opacity: 1, scale: 1 },
-      transition: { type: "spring", stiffness: 80, damping: 15 },
-      swipeRightEffect: "burst",
-    },
-    haptics: { pattern: [12] },
-    sound: { src: "/sounds/metal-click.mp3", volume: 0.28 },
-  },
+    label: "Cynical",
+    icon: "⌁",
+    prompt: `Rewrite the post like someone hyper-aware of hypocrisy, status games, social performance, and internet theater.
 
-  opposite: {
+This person is sharp, skeptical, funny, and very online.
+
+They notice:
+
+- contradictions
+- fake morality
+- branding disguised as authenticity
+- performative outrage
+- social climbing
+- trend-chasing
+- identity theater
+
+The rewrite should feel:
+
+- witty
+- concise
+- uncomfortable
+- socially observant
+- screenshot-worthy
+
+IMPORTANT:
+
+- Do not become cartoonishly negative
+- Do not sound evil
+- Do not just insult people
+- The best cynical posts feel TRUE more than cruel
+
+This lens should feel like:
+“someone saying the thing people privately think.”
+
+Energy examples:
+
+- “People only love accountability when it happens to someone else.”
+- “Half of modern discourse is just people protecting their personal brand.”
+- “Nobody talks like this in real life.”
+- “The internet turned public opinion into competitive theater.”
+- “People confuse visibility with importance constantly.”`,
+  },
+  {
     id: "opposite",
-    label: "Opposite-Perspective",
-    icon: "↔️",
-    prompt:
-      "Write a concise argument that takes the directly opposing conclusion to the user’s text.\n" +
-      "Constraints:\n" +
-      "- 2–3 sentences. No emojis, no hashtags.\n" +
-      "- Steelman only: use the opponent’s best reasoning; no straw-manning.\n" +
-      "- Use calm, matter-of-fact tone; no insults.\n" +
-      "- Make the opposing conclusion explicit (but keep it respectful).",
-    colors: { bg: "#C0392B", accent: "#FFF7F3", text: "#2B1A1A", patternOpacity: 0.06 },
-    assets: { shapeSvg: "/shapes/opposite.svg", pattern: "/patterns/opposite.svg" },
-    motion: {
-      enter: { opacity: 0, scale: 0.98 },
-      animate: { opacity: 1, scale: 1 },
-      transition: { type: "spring", stiffness: 75, damping: 16 },
-      swipeRightEffect: "flip",
-    },
-    haptics: { pattern: [18] },
-    sound: { src: "/sounds/whoosh.mp3", volume: 0.25 },
-  },
+    label: "Opposite",
+    icon: "⇄",
+    prompt: `Rewrite the post from the perspective of someone who genuinely disagrees with the original post.
 
-  playful: {
+This should feel like a REAL opposing worldview — not a weakened strawman version.
+
+The person should sound:
+
+- convinced
+- emotionally real
+- culturally believable
+- socially recognizable
+
+IMPORTANT:
+
+- Do not make the opposing view sound stupid
+- Do not make them secretly lose the argument
+- Do not soften their conviction
+- Preserve emotional intensity
+- Match the confidence level of the original
+
+The tone may be:
+
+- frustrated
+- sharp
+- amused
+- dismissive
+- passionate
+- exhausted
+- defensive
+
+depending on the original post.
+
+Avoid debate-club phrasing.
+
+Good Opposite posts make users uncomfortable because they sound plausible.
+
+Energy examples:
+
+- “Maybe people are just tired of being told disagreement equals harm.”
+- “Not every criticism is an attack on your existence.”
+- “Some of y’all label anything uncomfortable as dangerous.”
+- “You don’t actually want disagreement. You want social permission.”
+- “People keep calling this progress while normal people get less happy every year.”`,
+  },
+  {
     id: "playful",
-    label: "Playful-Satirical",
-    icon: "🎈",
-    prompt:
-      "Rewrite the user’s text with light satire or absurd humor.\n" +
-      "Constraints:\n" +
-      "- 1–2 sentences. No emojis, no hashtags.\n" +
-      "- Keep meaning recognizable; exaggerate slightly for comic effect.\n" +
-      "- Include one playful metaphor or absurd comparison.\n" +
-      "- Fun, not mean: no mocking individuals or protected groups.",
-    colors: { bg: "#D9B3FF", accent: "#FF69B4", text: "#2D0030", patternOpacity: 0.08 },
-    assets: { shapeSvg: "/shapes/playful.svg", pattern: "/patterns/playful.svg" },
-    motion: {
-      enter: { opacity: 0, scale: 0.98 },
-      animate: { opacity: 1, scale: 1 },
-      transition: { type: "spring", stiffness: 60, damping: 12 },
-      swipeRightEffect: "confetti",
-    },
-    haptics: { pattern: [6, 40, 6, 40, 6] },
-    sound: { src: "/sounds/pop.mp3", volume: 0.22 },
+    label: "Playful",
+    icon: "✦",
+    prompt: `Rewrite the post like someone turning the original idea into a funny, socially fluent, highly shareable internet post.
+
+This lens should feel:
+
+- clever
+- self-aware
+- meme-literate
+- chaotic
+- conversational
+- culturally current
+
+The humor can be:
+
+- dry
+- absurdist
+- observational
+- self-owning
+- group-chat energy
+- exaggerated honesty
+
+IMPORTANT:
+
+- Do not become random
+- Do not lose the core idea
+- Avoid repetitive meme phrasing
+- Avoid sounding like autogenerated TikTok captions
+- Use internet rhythm naturally, not excessively
+
+This should feel like:
+“the funniest smart person in the group chat.”
+
+Energy examples:
+
+- “This could’ve stayed an inside thought honestly.”
+- “Not me agreeing with this against my will.”
+- “Every day the internet invents a new way to emotionally exhaust people.”
+- “This feels like a conversation that starts at brunch and ends in a friendship breakup.”
+- “Y’all turned burnout into a full aesthetic.”`,
   },
-} as const;
+];
 
-export const TIMELINE_LIST: ReadonlyArray<TimelineSpec> = Object.values(
-  TIMELINES
-) as unknown as TimelineSpec[];
+export const TIMELINES = TIMELINE_LIST;
+export const LENS_ORDER = TIMELINE_LIST.map((timeline) => timeline.id);
 
-export function getTimeline(id: TimelineId): TimelineSpec {
-  return TIMELINES[id];
-}
+export const TIMELINE_BY_ID = TIMELINE_LIST.reduce((acc, timeline) => {
+  acc[timeline.id] = timeline;
+  return acc;
+}, {} as Record<TimelineId, TimelineSpec>);
+
+export const ID_TO_LENS = TIMELINE_BY_ID;
