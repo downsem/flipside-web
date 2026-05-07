@@ -8,12 +8,73 @@ import {
 } from "@/theme/timelines";
 import { getAdminDb, adminFieldValue } from "@/lib/firebaseAdmin";
 
-// NOTE: Do NOT initialize the OpenAI client at module-load time.
-// Next can evaluate route modules during build/collect; missing env vars would crash builds.
+type ImportedLockedLens = {
+  lensId?: TimelineId;
+  timelineId?: TimelineId;
+  text?: string;
+  sourceType?: "imported" | "native_user";
+  sourcePlatform?: string | null;
+  sourceUrl?: string | null;
+  sourceAuthorName?: string | null;
+  sourceAuthorHandle?: string | null;
+  importedByUid?: string | null;
+};
+
+const VALID_LENS_IDS = new Set<TimelineId>(["calm", "bridge", "cynical", "opposite", "playful"]);
 
 function wordCount(s: string) {
-  const w = s.trim().split(/\s+/).filter(Boolean);
-  return w.length;
+  return s.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function detectPlatform(url?: string | null): string | null {
+  if (!url) return null;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes("x.com") || host.includes("twitter.com")) return "x";
+    if (host.includes("threads.net")) return "threads";
+    if (host.includes("bsky.app") || host.includes("bluesky")) return "bluesky";
+    if (host.includes("instagram.com")) return "instagram";
+    if (host.includes("tiktok.com")) return "tiktok";
+    if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
+    if (host.includes("facebook.com")) return "facebook";
+    if (host.includes("reddit.com")) return "reddit";
+    return "other";
+  } catch {
+    return "other";
+  }
+}
+
+function normalizeLockedLenses(raw: any): Partial<Record<TimelineId, ImportedLockedLens>> {
+  const out: Partial<Record<TimelineId, ImportedLockedLens>> = {};
+  if (!raw || typeof raw !== "object") return out;
+
+  const entries = Array.isArray(raw)
+    ? raw.map((item) => [item?.lensId ?? item?.timelineId, item])
+    : Object.entries(raw);
+
+  for (const [key, value] of entries) {
+    const item = value as ImportedLockedLens;
+    const lensId = String(item?.lensId ?? item?.timelineId ?? key) as TimelineId;
+    if (!VALID_LENS_IDS.has(lensId)) continue;
+
+    const importedText = typeof item?.text === "string" ? item.text.trim() : "";
+    if (!importedText) continue;
+
+    out[lensId] = {
+      ...item,
+      lensId,
+      timelineId: lensId,
+      text: importedText,
+      sourceType: item?.sourceType === "native_user" ? "native_user" : "imported",
+      sourcePlatform: item?.sourcePlatform ?? detectPlatform(item?.sourceUrl),
+      sourceUrl: item?.sourceUrl ?? null,
+      sourceAuthorName: item?.sourceAuthorName ?? null,
+      sourceAuthorHandle: item?.sourceAuthorHandle ?? null,
+      importedByUid: item?.importedByUid ?? null,
+    };
+  }
+
+  return out;
 }
 
 export async function POST(req: Request) {
@@ -25,12 +86,7 @@ export async function POST(req: Request) {
 
     if (!postId || !text || !text.trim()) {
       return NextResponse.json(
-        {
-          ok: false,
-          partialFailure: true,
-          details: [],
-          error: "Missing postId or text",
-        },
+        { ok: false, partialFailure: true, details: [], error: "Missing postId or text" },
         { status: 200 }
       );
     }
@@ -41,8 +97,7 @@ export async function POST(req: Request) {
           ok: false,
           partialFailure: true,
           details: [],
-          error:
-            "Missing FIREBASE_SERVICE_ACCOUNT_JSON (set it in Vercel Project → Settings → Environment Variables).",
+          error: "Missing FIREBASE_SERVICE_ACCOUNT_JSON (set it in Vercel Project → Settings → Environment Variables).",
         },
         { status: 200 }
       );
@@ -54,8 +109,7 @@ export async function POST(req: Request) {
           ok: false,
           partialFailure: true,
           details: [],
-          error:
-            "Missing OPENAI_API_KEY (set it in Vercel Project → Settings → Environment Variables).",
+          error: "Missing OPENAI_API_KEY (set it in Vercel Project → Settings → Environment Variables).",
         },
         { status: 200 }
       );
@@ -79,13 +133,46 @@ export async function POST(req: Request) {
       );
     }
 
-    // Keep outputs concise, but leave enough room for human rhythm and behavioral realism.
+    const lockedLenses = normalizeLockedLenses(body?.lockedLenses ?? body?.importedLenses);
+
+    const lockedResults = await Promise.all(
+      Object.entries(lockedLenses).map(async ([lensId, locked]) => {
+        const timelineId = lensId as TimelineId;
+
+        await adminDb
+          .collection("posts")
+          .doc(postId)
+          .collection("rewrites")
+          .doc(timelineId)
+          .set(
+            {
+              timelineId,
+              lensId: timelineId,
+              text: locked?.text ?? "",
+              sourceType: locked?.sourceType ?? "imported",
+              sourcePlatform: locked?.sourcePlatform ?? detectPlatform(locked?.sourceUrl),
+              sourceUrl: locked?.sourceUrl ?? null,
+              sourceAuthorName: locked?.sourceAuthorName ?? null,
+              sourceAuthorHandle: locked?.sourceAuthorHandle ?? null,
+              importedByUid: locked?.importedByUid ?? null,
+              locked: true,
+              createdAt: adminFieldValue.serverTimestamp(),
+              updatedAt: adminFieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+        return { timelineId, ok: true, sourceType: locked?.sourceType ?? "imported", locked: true };
+      })
+    );
+
     const wc = wordCount(text);
     const minWords = Math.max(5, Math.floor(wc * 0.65));
     const maxWords = Math.max(minWords + 5, Math.ceil(wc * 1.4));
+    const aiTimelines = TIMELINE_LIST.filter((timeline) => !lockedLenses[timeline.id]);
 
-    const results = await Promise.all(
-      TIMELINE_LIST.map(async (timeline) => {
+    const aiResults = await Promise.all(
+      aiTimelines.map(async (timeline) => {
         const timelineId = timeline.id as TimelineId;
 
         try {
@@ -110,10 +197,7 @@ export async function POST(req: Request) {
                   `Current lens: "${timeline.label}". Do not mention this lens by name.\n\n` +
                   `Lens instructions:\n${timeline.prompt}`,
               },
-              {
-                role: "user",
-                content: `Original post:\n${text}`,
-              },
+              { role: "user", content: `Original post:\n${text}` },
             ],
             max_tokens: 280,
             temperature: 0.98,
@@ -122,12 +206,9 @@ export async function POST(req: Request) {
           });
 
           let rawContent: any = completion.choices[0]?.message?.content ?? "";
-
           if (Array.isArray(rawContent)) {
             rawContent = rawContent
-              .map((part) =>
-                typeof part === "string" ? part : (part as any).text ?? ""
-              )
+              .map((part) => (typeof part === "string" ? part : (part as any).text ?? ""))
               .join(" ");
           }
 
@@ -167,9 +248,7 @@ export async function POST(req: Request) {
             let fixed: any = fix.choices[0]?.message?.content ?? "";
             if (Array.isArray(fixed)) {
               fixed = fixed
-                .map((part) =>
-                  typeof part === "string" ? part : (part as any).text ?? ""
-                )
+                .map((part) => (typeof part === "string" ? part : (part as any).text ?? ""))
                 .join(" ");
             }
             const fixedText = (fixed || "").toString().trim();
@@ -184,19 +263,19 @@ export async function POST(req: Request) {
             .set(
               {
                 timelineId,
+                lensId: timelineId,
                 text: finalText,
+                sourceType: "ai",
+                locked: false,
                 createdAt: adminFieldValue.serverTimestamp(),
+                updatedAt: adminFieldValue.serverTimestamp(),
               },
               { merge: true }
             );
 
-          return { timelineId, ok: true };
+          return { timelineId, ok: true, sourceType: "ai", locked: false };
         } catch (err: any) {
-          console.error(
-            "[/api/flip] Error generating rewrite for",
-            timelineId,
-            err
-          );
+          console.error("[/api/flip] Error generating rewrite for", timelineId, err);
 
           try {
             await adminDb
@@ -207,9 +286,13 @@ export async function POST(req: Request) {
               .set(
                 {
                   timelineId,
+                  lensId: timelineId,
                   text: "(We couldn't generate this rewrite right now.)",
+                  sourceType: "ai",
+                  locked: false,
                   error: String(err?.message || err),
                   createdAt: adminFieldValue.serverTimestamp(),
+                  updatedAt: adminFieldValue.serverTimestamp(),
                 },
                 { merge: true }
               );
@@ -217,12 +300,31 @@ export async function POST(req: Request) {
             console.error("[/api/flip] Failed to write stub rewrite:", writeErr);
           }
 
-          return { timelineId, ok: false, error: String(err?.message || err) };
+          return {
+            timelineId,
+            ok: false,
+            sourceType: "ai",
+            locked: false,
+            error: String(err?.message || err),
+          };
         }
       })
     );
 
+    const results = [...lockedResults, ...aiResults];
     const hadErrors = results.some((r) => !r.ok);
+
+    await adminDb
+      .collection("posts")
+      .doc(postId)
+      .set(
+        {
+          hasImportedLenses: Object.keys(lockedLenses).length > 0,
+          importedLensCount: Object.keys(lockedLenses).length,
+          updatedAt: adminFieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
 
     return NextResponse.json(
       { ok: true, partialFailure: hadErrors, details: results },
