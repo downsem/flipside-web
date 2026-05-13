@@ -1,9 +1,7 @@
-// src/app/api/import-url/route.ts
+// src/app/api/import-social-post/route.ts
 import { NextResponse } from "next/server";
 import { importSocialPostFromUrl } from "@/lib/socialImport";
 
-// Backward-compatible route used by the mobile app.
-// It now runs through the social import adapter layer first.
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -12,9 +10,9 @@ export async function POST(req: Request) {
     const result = await importSocialPostFromUrl(rawUrl);
     return NextResponse.json(result, { status: 200 });
   } catch (err: any) {
-    console.error("[/api/import-url] error", err);
+    console.error("[/api/import-social-post] error", err);
     return NextResponse.json(
-      { ok: false, error: err?.message || "Could not import this URL." },
+      { ok: false, error: err?.message || "Could not import social post." },
       { status: 200 }
     );
   }
