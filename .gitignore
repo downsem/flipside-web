@@ -30,3 +30,5 @@ zips/
 .vercel
 .env*.local
 audit-output/
+
+*.bak-*
