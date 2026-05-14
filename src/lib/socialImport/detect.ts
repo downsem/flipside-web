@@ -11,7 +11,7 @@ export function detectPlatform(url: string) {
     const host = new URL(url).hostname.toLowerCase();
 
     if (host === "bsky.app" || host.endsWith(".bsky.app")) return "bluesky";
-    if (host.includes("threads.net") || host.includes("threads.com") || host.includes("threads.com")) return "threads";
+    if (host.includes("threads.net") || host.includes("threads.com") || host.includes("threads.com") || host.includes("threads.com")) return "threads";
     if (host.includes("linkedin.com")) return "linkedin";
     if (host.includes("truthsocial.com")) return "truth";
     if (host.includes("x.com") || host.includes("twitter.com")) return "x";
