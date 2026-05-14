@@ -2,6 +2,7 @@
 import type { ImportedSocialPost, ImportFailure } from "./types";
 import { detectPlatform, normalizeUrl } from "./detect";
 import { importBlueskyPost } from "./adapters/bluesky";
+import { importXPost } from "./adapters/x";
 import { importGenericPreview } from "./genericPreview";
 
 export async function importSocialPostFromUrl(rawUrl: string): Promise<ImportedSocialPost | ImportFailure> {
@@ -10,6 +11,10 @@ export async function importSocialPostFromUrl(rawUrl: string): Promise<ImportedS
 
   if (platform === "bluesky") {
     return importBlueskyPost(sourceUrl);
+  }
+
+  if (platform === "x") {
+    return importXPost(sourceUrl);
   }
 
   return importGenericPreview(sourceUrl);
