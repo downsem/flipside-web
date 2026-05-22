@@ -6,7 +6,10 @@ import { importXPost } from "./adapters/x";
 import { importThreadsPost } from "./adapters/threads";
 import { importGenericPreview } from "./genericPreview";
 
-export async function importSocialPostFromUrl(rawUrl: string): Promise<ImportedSocialPost | ImportFailure> {
+export async function importSocialPostFromUrl(
+  rawUrl: string,
+  options: { sharedText?: string } = {}
+): Promise<ImportedSocialPost | ImportFailure> {
   const sourceUrl = normalizeUrl(rawUrl);
   const platform = detectPlatform(sourceUrl);
 
@@ -19,7 +22,7 @@ export async function importSocialPostFromUrl(rawUrl: string): Promise<ImportedS
   }
 
   if (platform === "threads") {
-    return importThreadsPost(sourceUrl);
+    return importThreadsPost(sourceUrl, { sharedText: options.sharedText });
   }
 
   return importGenericPreview(sourceUrl);

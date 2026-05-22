@@ -19,7 +19,7 @@ export type ImportedSocialPost = {
   description?: string | null;
   imageUrl?: string | null;
   embedUrl?: string | null;
-  importMethod: "bluesky_api" | "x_api" | "threads_metadata" | "generic_preview";
+  importMethod: "bluesky_api" | "x_api" | "threads_metadata" | "ios_share_payload" | "generic_preview";
   ownershipMode: "external_public_post";
 };
 

@@ -200,7 +200,10 @@ function extractAuthorName(title: string, fallbackHandle?: string | null) {
   return fallbackHandle || null;
 }
 
-export async function importThreadsPost(rawUrl: string): Promise<ImportedSocialPost | ImportFailure> {
+export async function importThreadsPost(
+  rawUrl: string,
+  options: { sharedText?: string } = {}
+): Promise<ImportedSocialPost | ImportFailure> {
   const parsed = parseThreadsPostUrl(rawUrl);
 
   if (!parsed) {
@@ -210,6 +213,36 @@ export async function importThreadsPost(rawUrl: string): Promise<ImportedSocialP
       sourcePlatform: "threads",
       error: "This does not look like a Threads post URL.",
     };
+  }
+
+  const sharedText = cleanText(options.sharedText || "");
+  if (sharedText) {
+    const authorName = extractAuthorName("", parsed.authorHandle);
+    const authorHandle = parsed.authorHandle || null;
+
+    return {
+      ok: true,
+      platform: "threads",
+      sourcePlatform: "threads",
+      sourceUrl: parsed.sourceUrl,
+      permalink: parsed.sourceUrl,
+      postId: parsed.shortcode || null,
+      uri: null,
+      cid: null,
+      authorName,
+      authorHandle,
+      sourceAuthorName: authorName,
+      sourceAuthorHandle: authorHandle,
+      timestamp: null,
+      sourceTimestampLabel: null,
+      text: sharedText,
+      title: null,
+      description: null,
+      imageUrl: null,
+      embedUrl: parsed.sourceUrl,
+      importMethod: "ios_share_payload",
+      ownershipMode: "external_public_post",
+    } as ImportedSocialPost & Record<string, unknown>;
   }
 
   try {

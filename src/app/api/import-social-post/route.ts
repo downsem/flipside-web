@@ -6,8 +6,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const rawUrl = typeof body?.url === "string" ? body.url : "";
+    const sharedText = typeof body?.sharedText === "string" ? body.sharedText : typeof body?.text === "string" ? body.text : "";
 
-    const result = await importSocialPostFromUrl(rawUrl);
+    const result = await importSocialPostFromUrl(rawUrl, { sharedText });
     return NextResponse.json(result, { status: 200 });
   } catch (err: any) {
     console.error("[/api/import-social-post] error", err);
