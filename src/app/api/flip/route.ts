@@ -219,9 +219,10 @@ function buildSearchGroundingGenerationPrompt(
 
   return (
     "SEARCH-GROUNDED BACKGROUND CONTEXT:\n" +
-    "Use this context to make the rewrite more informed, specific, and perspective-driven. " +
+    "Use this context only to understand the topic, stakes, disagreement axis, and credible lens angle. " +
+    "Do not turn the rewrite into a summary, reply, analysis, explainer, or public-reaction commentary. " +
     "Do not mention that you searched. Do not cite sources. Do not claim this is a real imported post. " +
-    "Do not invent source names, URLs, authors, or direct quotes. The card remains an AI-generated lens.\n\n" +
+    "Do not invent source names, URLs, authors, direct quotes, or unsupported factual claims. The card remains an AI-generated lens.\n\n" +
     `Topic tags: ${topicTags}\n` +
     `Original claim: ${context.originalClaim || "not extracted"}\n` +
     `Original tone: ${context.originalTone || "not extracted"}\n` +
@@ -229,12 +230,173 @@ function buildSearchGroundingGenerationPrompt(
     `Search query hints: ${queries}\n` +
     `Lens-specific angle for ${timelineLabel}: ${lensAngle || "Use the lens instructions to choose a grounded angle."}\n\n` +
     "QUALITY BAR:\n" +
-    "- Do not merely paraphrase the original.\n" +
-    "- Identify the real disagreement, assumption, incentive, or worldview underneath it.\n" +
+    "- Use the context to sharpen the lens, not to change the post into commentary about the topic.\n" +
+    "- Preserve the original post's basic communication act, tense, directness, and social-post shape.\n" +
+    "- Do not merely paraphrase the original. Change the interpretation, not the post format.\n" +
     "- Calm should clarify without becoming vague or therapist-like.\n" +
-    "- Bridge should translate why different people read the same issue differently without becoming neutral mush.\n" +
+    "- Bridge should translate why different people read the issue differently without becoming neutral mush.\n" +
     "- Opposite should be the strongest credible counterargument, not a strawman.\n\n"
   );
+}
+
+type PostShapeContext = {
+  communicationAct: string;
+  pointOfView: string;
+  tense: string;
+  structure: string;
+  directness: string;
+  punctuationStyle: string;
+  firstLine: string;
+  hasList: boolean;
+  hasQuestion: boolean;
+  hasDirectAddress: boolean;
+};
+
+function firstNonEmptyLine(value: string): string {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) || "";
+}
+
+function detectCommunicationAct(value: string): string {
+  const text = String(value || "").trim();
+  if (!text) return "unknown";
+  if (/\?$/.test(text)) return "question";
+  if (/^(why|how|what|when|where|who|is|are|do|does|did|can|could|should|would)\b/i.test(text)) return "question";
+  if (/^\s*(\d+[.)]|[-*•])\s+/m.test(text)) return "list";
+  if (/\b(is|are|was|were|has|have|had|will|should|must|needs to|cannot|can't|won't|isn't|aren't)\b/i.test(text)) return "direct claim";
+  if (/\b(lol|lmao|honestly|wild|insane|unreal|not me|y'all|you all)\b/i.test(text)) return "social reaction";
+  return "observation";
+}
+
+function detectPointOfView(value: string): string {
+  const text = String(value || "").toLowerCase();
+  if (/\b(i|me|my|mine|we|us|our|ours)\b/.test(text)) return "first person";
+  if (/\b(you|your|y'all|you all)\b/.test(text)) return "direct address";
+  return "third person / impersonal";
+}
+
+function detectTense(value: string): string {
+  const text = String(value || "").toLowerCase();
+  if (/\b(will|going to|about to)\b/.test(text)) return "future";
+  if (/\b(was|were|had|did|said|went|made|called|claimed)\b/.test(text)) return "past";
+  if (/\b(is|are|am|has|have|does|do|can't|cannot|won't|isn't|aren't)\b/.test(text)) return "present";
+  return "same as original";
+}
+
+function detectStructure(value: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "unknown";
+  if (/^\s*(\d+[.)]|[-*•])\s+/m.test(raw)) return "list";
+  const sentenceCount = raw.split(/[.!?]+\s+/).filter(Boolean).length;
+  if (sentenceCount <= 1) return "single blunt statement";
+  if (sentenceCount === 2) return "two-part post";
+  return "short paragraph";
+}
+
+function buildPostShapeContext(originalText: string): PostShapeContext {
+  const raw = String(originalText || "").trim();
+  return {
+    communicationAct: detectCommunicationAct(raw),
+    pointOfView: detectPointOfView(raw),
+    tense: detectTense(raw),
+    structure: detectStructure(raw),
+    directness: raw.length < 140 ? "very direct / compact" : raw.length < 360 ? "concise" : "expanded",
+    punctuationStyle: /[!?]{2,}/.test(raw) ? "emphatic" : /[.!?]$/.test(raw) ? "standard" : "minimal / no terminal punctuation",
+    firstLine: firstNonEmptyLine(raw).slice(0, 220),
+    hasList: /^\s*(\d+[.)]|[-*•])\s+/m.test(raw),
+    hasQuestion: /\?/.test(raw),
+    hasDirectAddress: /\b(you|your|y'all|you all)\b/i.test(raw),
+  };
+}
+
+function buildPostShapeGenerationPrompt(shape: PostShapeContext): string {
+  return (
+    "\n\nPOST-SHAPE PRESERVATION RULES:\n" +
+    "Write the lens as a standalone version of the original post, not as a reply to it.\n" +
+    "Preserve the same speaker voice, post shape, tense, point of view, and directness as much as possible.\n" +
+    "Change the interpretive frame for the lens, not the basic writing mode.\n" +
+    `- Original communication act: ${shape.communicationAct}.\n` +
+    `- Original point of view: ${shape.pointOfView}.\n` +
+    `- Original tense: ${shape.tense}.\n` +
+    `- Original structure: ${shape.structure}.\n` +
+    `- Original directness: ${shape.directness}.\n` +
+    `- Original punctuation style: ${shape.punctuationStyle}.\n` +
+    `- First line shape reference: ${shape.firstLine || "not available"}.\n` +
+    "Hard constraints:\n" +
+    "- Do not write a reply to the original post.\n" +
+    "- Do not write about how people are reacting unless the original post does that.\n" +
+    "- Do not start with meta-framing such as 'some people,' 'others,' 'the real issue,' or 'what this shows' unless the original used that kind of framing.\n" +
+    "- Do not use numbered lists or bullets unless the original post used a list.\n" +
+    "- If the original is a blunt claim, the rewrite should also be a blunt claim.\n" +
+    "- If the original is a question, the rewrite should usually remain a question.\n" +
+    "- If the original is a joke, preserve joke structure while changing the lens logic.\n" +
+    "- Preserve the same rough length and social-post rhythm.\n"
+  );
+}
+
+async function reviseForRewriteDiscipline(
+  openai: OpenAI,
+  params: {
+    originalText: string;
+    draftText: string;
+    timelineLabel: string;
+    timelinePrompt: string;
+    postShape: PostShapeContext;
+    minWords: number;
+    maxWords: number;
+    searchGroundingPrompt: string;
+  }
+): Promise<string> {
+  const draft = String(params.draftText || "").trim();
+  if (!draft || draft.startsWith("(We couldn't generate")) return draft;
+
+  try {
+    const fix = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            GLOBAL_REWRITE_SYSTEM_PROMPT +
+            "\n\nYou are doing a final rewrite-discipline pass for FlipSide.\n" +
+            "Your job is to preserve the lens perspective while making the output read like the same speaker rewriting the same post from that lens.\n" +
+            "Only revise if needed. Output only the final post text.\n" +
+            `Keep it between ${params.minWords} and ${params.maxWords} words.\n` +
+            buildPostShapeGenerationPrompt(params.postShape),
+        },
+        {
+          role: "system",
+          content:
+            params.searchGroundingPrompt +
+            `Current lens: "${params.timelineLabel}". Do not mention this lens by name.\n\n` +
+            `Lens instructions:\n${params.timelinePrompt}`,
+        },
+        { role: "user", content: `Original post:\n${params.originalText}` },
+        { role: "user", content: `Draft lens rewrite to discipline:\n${draft}` },
+        {
+          role: "user",
+          content:
+            "Return the final rewritten post only. It must not sound like a reply, analysis, summary, explainer, or commentary about the original post.",
+        },
+      ],
+      max_tokens: 280,
+      temperature: 0.35,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1,
+    });
+
+    let raw: any = fix.choices[0]?.message?.content ?? "";
+    if (Array.isArray(raw)) {
+      raw = raw.map((part) => (typeof part === "string" ? part : (part as any).text ?? "")).join(" ");
+    }
+    const revised = String(raw || "").trim();
+    return revised || draft;
+  } catch (err) {
+    console.warn("[/api/flip] Rewrite discipline pass failed; using previous draft.", err);
+    return draft;
+  }
 }
 
 function searchGroundingForFirestore(context: SearchGroundingContext | null) {
@@ -385,6 +547,7 @@ export async function POST(req: Request) {
     const wc = wordCount(text);
     const minWords = Math.max(5, Math.floor(wc * 0.65));
     const maxWords = Math.max(minWords + 5, Math.ceil(wc * 1.4));
+    const postShape = buildPostShapeContext(text);
     const aiTimelines = TIMELINE_LIST.filter((timeline) => !lockedLenses[timeline.id]);
 
     const aiResults = await Promise.all(
@@ -405,7 +568,8 @@ export async function POST(req: Request) {
                   "- Output only the rewritten post text.\n" +
                   "- No labels, no bullets, no preamble, no quotation marks around the output.\n" +
                   "- No hashtags unless the original post used them naturally.\n" +
-                  "- Preserve the same core idea. Change the human perspective, not the topic.",
+                  "- Preserve the same core idea. Change the human perspective, not the topic.\n" +
+                  buildPostShapeGenerationPrompt(postShape),
               },
               {
                 role: "system",
@@ -417,7 +581,7 @@ export async function POST(req: Request) {
               { role: "user", content: `Original post:\n${text}` },
             ],
             max_tokens: 280,
-            temperature: 0.98,
+            temperature: 0.72,
             presence_penalty: 0.35,
             frequency_penalty: 0.25,
           });
@@ -447,7 +611,8 @@ export async function POST(req: Request) {
                     "- Keep the same human instinct/personality.\n" +
                     "- Keep the same core idea.\n" +
                     "- Do not polish away the human rhythm.\n" +
-                    "- Output only the revised post text.",
+                    "- Output only the revised post text.\n" +
+                    buildPostShapeGenerationPrompt(postShape),
                 },
                 {
                   role: "system",
@@ -460,7 +625,7 @@ export async function POST(req: Request) {
                 { role: "user", content: `Draft rewrite to fix:\n${finalText}` },
               ],
               max_tokens: 280,
-              temperature: 0.8,
+              temperature: 0.45,
             });
 
             let fixed: any = fix.choices[0]?.message?.content ?? "";
@@ -472,6 +637,17 @@ export async function POST(req: Request) {
             const fixedText = (fixed || "").toString().trim();
             if (fixedText) finalText = fixedText;
           }
+
+          finalText = await reviseForRewriteDiscipline(openai, {
+            originalText: text,
+            draftText: finalText,
+            timelineLabel: timeline.label,
+            timelinePrompt: timeline.prompt,
+            postShape,
+            minWords,
+            maxWords,
+            searchGroundingPrompt: buildSearchGroundingGenerationPrompt(searchGrounding, timelineId, timeline.label),
+          });
 
           await adminDb
             .collection("posts")
