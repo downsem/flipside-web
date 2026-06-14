@@ -1,4 +1,5 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
@@ -28,10 +29,16 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, create, update: if isOwner(userId);
       allow delete: if isOwner(userId);
+
+      match /lensStats/{docId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     match /posts/{postId} {
-      allow read: if resource.data.status == 'published' || resource.data.visibility == 'public' || isOwner(resource.data.authorId);
+      allow read: if resource.data.status == 'published'
+        || resource.data.visibility == 'public'
+        || isOwner(resource.data.authorId);
 
       allow create: if signedIn()
         && request.resource.data.authorId == request.auth.uid
@@ -74,8 +81,13 @@ service cloud.firestore {
 
       match /rewrites/{rewriteId} {
         allow read: if canReadPost(postId);
-        // AI rewrites are written by the trusted backend with Firebase Admin.
+
+        // AI rewrites are written only by the trusted backend using Firebase Admin.
         allow create, update, delete: if false;
+
+        match /replies/{replyId} {
+          allow read, create, update, delete: if false;
+        }
       }
 
       match /generationRuns/{runId} {
@@ -86,6 +98,10 @@ service cloud.firestore {
           allow read: if postExists(postId) && isOwner(postData(postId).authorId);
           allow create, update, delete: if false;
         }
+      }
+
+      match /replies/{replyId} {
+        allow read, create, update, delete: if false;
       }
     }
 
@@ -100,10 +116,11 @@ service cloud.firestore {
           'createdAt',
           'metadata'
         ]);
+
       allow read, update, delete: if false;
     }
 
-    // MVP launch posture: no client access to social/forum surfaces.
+    // MVP launch posture: no client access to Rooms/Backroom/social surfaces.
     match /rooms/{document=**} {
       allow read, write: if false;
     }
