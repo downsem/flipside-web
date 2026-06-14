@@ -11,6 +11,7 @@ out/
 # Env files / secrets
 .env
 .env.*
+!.env.example
 serviceAccount*.json
 firebase-admin*.json
 scripts/secrets/
@@ -21,16 +22,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# OS
-.DS_Store
+# TypeScript/cache/audit artifacts
+tsconfig.tsbuildinfo
+audit-output/
+flipside-audit-output.zip
 
 # Local zips/artifacts
 zips/
 *.zip
-.vercel
-.env*.local
-audit-output/
 
+# Local backups / OS
 *.bak-*
-
-*.bak-*
+*.bak
+.DS_Store

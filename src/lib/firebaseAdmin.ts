@@ -32,4 +32,9 @@ export function getAdminDb() {
   return admin.firestore(app);
 }
 
+export function getAdminAuth() {
+  const app = getAdminApp();
+  return admin.auth(app);
+}
+
 export const adminFieldValue = admin.firestore.FieldValue;

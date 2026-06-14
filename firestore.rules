@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function postExists(postId) {
+      return exists(/databases/$(database)/documents/posts/$(postId));
+    }
+
+    function postData(postId) {
+      return get(/databases/$(database)/documents/posts/$(postId)).data;
+    }
+
+    function canReadPost(postId) {
+      return postExists(postId) && (
+        postData(postId).status == 'published' ||
+        postData(postId).visibility == 'public' ||
+        isOwner(postData(postId).authorId)
+      );
+    }
+
+    match /users/{userId} {
+      allow read, create, update: if isOwner(userId);
+      allow delete: if isOwner(userId);
+    }
+
+    match /posts/{postId} {
+      allow read: if resource.data.status == 'published' || resource.data.visibility == 'public' || isOwner(resource.data.authorId);
+
+      allow create: if signedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'id',
+          'text',
+          'authorId',
+          'authorName',
+          'authorDisplayName',
+          'authorIsAnonymous',
+          'createdAt',
+          'updatedAt',
+          'votes',
+          'replyCount',
+          'sourceType',
+          'originalSourceType',
+          'sourceUrl',
+          'sourcePlatform',
+          'sourceAuthorName',
+          'sourceAuthorHandle',
+          'sourceTimestampLabel',
+          'sourceImportedText',
+          'sourceOnly',
+          'sourceTitle',
+          'sourceDescription',
+          'imageUrl',
+          'importMethod',
+          'ownershipMode',
+          'flipType',
+          'status',
+          'visibility',
+          'hasImportedLenses',
+          'importedLensCount'
+        ]);
+
+      allow update: if isOwner(resource.data.authorId)
+        && request.resource.data.authorId == resource.data.authorId;
+
+      allow delete: if isOwner(resource.data.authorId);
+
+      match /rewrites/{rewriteId} {
+        allow read: if canReadPost(postId);
+        // AI rewrites are written by the trusted backend with Firebase Admin.
+        allow create, update, delete: if false;
+      }
+
+      match /generationRuns/{runId} {
+        allow read: if postExists(postId) && isOwner(postData(postId).authorId);
+        allow create, update, delete: if false;
+
+        match /candidates/{candidateId} {
+          allow read: if postExists(postId) && isOwner(postData(postId).authorId);
+          allow create, update, delete: if false;
+        }
+      }
+    }
+
+    match /events/{eventId} {
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'eventType',
+          'userId',
+          'postId',
+          'lensId',
+          'createdAt',
+          'metadata'
+        ]);
+      allow read, update, delete: if false;
+    }
+
+    // MVP launch posture: no client access to social/forum surfaces.
+    match /rooms/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

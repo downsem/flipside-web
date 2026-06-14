@@ -6,7 +6,7 @@ import {
   TIMELINE_LIST,
   type TimelineId,
 } from "@/theme/timelines";
-import { getAdminDb, adminFieldValue } from "@/lib/firebaseAdmin";
+import { getAdminAuth, getAdminDb, adminFieldValue } from "@/lib/firebaseAdmin";
 
 type ImportedLockedLens = {
   lensId?: TimelineId;
@@ -20,10 +20,51 @@ type ImportedLockedLens = {
   importedByUid?: string | null;
 };
 
-const VALID_LENS_IDS = new Set<TimelineId>(["calm", "bridge", "cynical", "opposite", "playful"]);
+type Candidate = {
+  id: string;
+  lensId: TimelineId;
+  text: string;
+  score: number;
+  reason: string;
+  selected: boolean;
+  rejected: boolean;
+};
 
-function wordCount(s: string) {
-  return s.trim().split(/\s+/).filter(Boolean).length;
+type PostShapeContext = {
+  communicationAct: string;
+  pointOfView: string;
+  tense: string;
+  structure: string;
+  directness: string;
+  punctuationStyle: string;
+  firstLine: string;
+};
+
+const VALID_LENS_IDS = new Set<TimelineId>(["calm", "bridge", "cynical", "opposite", "playful"]);
+const PROMPT_VERSION = "ai_mode_same_speaker_ranked_v1";
+const JUDGE_VERSION = "lens_candidate_judge_v1";
+const MODEL = process.env.OPENAI_FLIP_MODEL || "gpt-4.1-mini";
+const CANDIDATES_PER_LENS = Math.max(
+  1,
+  Math.min(4, Number(process.env.FLIPSIDE_CANDIDATES_PER_LENS || 3))
+);
+
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return NextResponse.json(body, { status });
+}
+
+function wordCount(value: string) {
+  return String(value || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+function cleanText(value: unknown, max = 1200): string {
+  return String(value || "")
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .replace(/^['"]|['"]$/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim()
+    .slice(0, max);
 }
 
 function detectPlatform(url?: string | null): string | null {
@@ -44,28 +85,10 @@ function detectPlatform(url?: string | null): string | null {
   }
 }
 
-
-type SearchGroundingContext = {
-  ok: boolean;
-  topicTags: string[];
-  originalClaim: string;
-  originalTone: string;
-  contextSummary: string;
-  searchQueries: string[];
-  lensAngles: Partial<Record<TimelineId, string>>;
-  raw?: string;
-};
-
-function cleanString(value: any, max = 1200): string {
-  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
-}
-
-function cleanStringArray(value: any, maxItems = 8, maxEach = 120): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => cleanString(item, maxEach))
-    .filter(Boolean)
-    .slice(0, maxItems);
+function extractBearerToken(req: Request) {
+  const header = req.headers.get("authorization") || "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] || null;
 }
 
 function extractJsonObject(value: string): any | null {
@@ -109,148 +132,6 @@ function responseText(response: any): string {
   }
   return parts.join("\n").trim();
 }
-
-function shouldUseSearchGrounding(body: any): boolean {
-  const requestedMode = String(body?.generationMode || body?.aiGenerationMode || "").toLowerCase();
-  if (["classic", "no_search", "no-search", "offline"].includes(requestedMode)) return false;
-
-  const flag = String(process.env.FLIPSIDE_SEARCH_GROUNDED_AI ?? "true").toLowerCase();
-  return !["0", "false", "off", "no"].includes(flag);
-}
-
-function normalizeGrounding(raw: any, fallbackRaw = ""): SearchGroundingContext {
-  const lensAngles = raw?.lensAngles && typeof raw.lensAngles === "object" ? raw.lensAngles : {};
-
-  return {
-    ok: true,
-    topicTags: cleanStringArray(raw?.topicTags, 8, 80),
-    originalClaim: cleanString(raw?.originalClaim, 420),
-    originalTone: cleanString(raw?.originalTone, 220),
-    contextSummary: cleanString(raw?.contextSummary || fallbackRaw, 1800),
-    searchQueries: cleanStringArray(raw?.searchQueries, 8, 140),
-    lensAngles: {
-      calm: cleanString(lensAngles.calm, 420),
-      bridge: cleanString(lensAngles.bridge, 420),
-      cynical: cleanString(lensAngles.cynical, 420),
-      opposite: cleanString(lensAngles.opposite, 420),
-      playful: cleanString(lensAngles.playful, 420),
-    },
-    raw: cleanString(fallbackRaw, 2400),
-  };
-}
-
-async function buildSearchGroundingContext(openai: OpenAI, originalText: string): Promise<SearchGroundingContext | null> {
-  const client: any = openai as any;
-  if (!client?.responses?.create) {
-    console.warn("[/api/flip] OpenAI Responses API unavailable; using classic rewrite mode.");
-    return null;
-  }
-
-  const model = process.env.OPENAI_WEB_SEARCH_MODEL || process.env.OPENAI_SEARCH_MODEL || "gpt-4.1-mini";
-  const searchContextSize = process.env.OPENAI_WEB_SEARCH_CONTEXT_SIZE || "low";
-
-  try {
-    const response = await client.responses.create({
-      model,
-      tools: [
-        {
-          type: "web_search",
-          search_context_size: searchContextSize,
-        },
-      ],
-      tool_choice: "auto",
-      input: [
-        {
-          role: "system",
-          content:
-            "You help FlipSide write smarter AI-generated social-post rewrites. " +
-            "Use web search only to understand current public context around the original post. " +
-            "Do not find or create replacement social posts. Do not fabricate posts, authors, URLs, or quotes. " +
-            "Return compact JSON only.",
-        },
-        {
-          role: "user",
-          content:
-            "Original post:\n" +
-            originalText +
-            "\n\nAnalyze the topic and current public context. Return JSON with exactly these keys:\n" +
-            "{\n" +
-            '  "topicTags": ["short topic tag"],\n' +
-            '  "originalClaim": "one sentence describing the claim or concern",\n' +
-            '  "originalTone": "one phrase describing the tone",\n' +
-            '  "searchQueries": ["queries you effectively searched or would search"],\n' +
-            '  "contextSummary": "brief current-context summary useful for rewriting, not citations",\n' +
-            '  "lensAngles": {\n' +
-            '    "calm": "measured, clarifying angle",\n' +
-            '    "bridge": "what different groups are reacting to",\n' +
-            '    "cynical": "incentives, power, media, status, or attention angle",\n' +
-            '    "opposite": "strongest credible counterargument",\n' +
-            '    "playful": "funny social-native angle"\n' +
-            "  }\n" +
-            "}\n\n" +
-            "Keep this compact. The generated lenses will remain labeled AI-generated, not imported/source cards.",
-        },
-      ],
-    });
-
-    const raw = responseText(response);
-    const parsed = extractJsonObject(raw);
-    if (!parsed) {
-      return normalizeGrounding({ contextSummary: raw }, raw);
-    }
-
-    return normalizeGrounding(parsed, raw);
-  } catch (err) {
-    console.warn("[/api/flip] Search grounding failed; falling back to classic rewrite mode.", err);
-    return null;
-  }
-}
-
-function buildSearchGroundingGenerationPrompt(
-  context: SearchGroundingContext | null,
-  timelineId: TimelineId,
-  timelineLabel: string
-): string {
-  if (!context?.ok) return "";
-
-  const lensAngle = cleanString((context.lensAngles as any)?.[timelineId], 520);
-  const topicTags = context.topicTags.length ? context.topicTags.join(", ") : "unknown";
-  const queries = context.searchQueries.length ? context.searchQueries.join(" | ") : "not stored";
-
-  return (
-    "SEARCH-GROUNDED BACKGROUND CONTEXT:\n" +
-    "Use this context only to understand the topic, stakes, disagreement axis, and credible lens angle. " +
-    "Do not turn the rewrite into a summary, reply, analysis, explainer, or public-reaction commentary. " +
-    "Do not mention that you searched. Do not cite sources. Do not claim this is a real imported post. " +
-    "Do not invent source names, URLs, authors, direct quotes, or unsupported factual claims. The card remains an AI-generated lens.\n\n" +
-    `Topic tags: ${topicTags}\n` +
-    `Original claim: ${context.originalClaim || "not extracted"}\n` +
-    `Original tone: ${context.originalTone || "not extracted"}\n` +
-    `Current context summary: ${context.contextSummary || "not available"}\n` +
-    `Search query hints: ${queries}\n` +
-    `Lens-specific angle for ${timelineLabel}: ${lensAngle || "Use the lens instructions to choose a grounded angle."}\n\n` +
-    "QUALITY BAR:\n" +
-    "- Use the context to sharpen the lens, not to change the post into commentary about the topic.\n" +
-    "- Preserve the original post's basic communication act, tense, directness, and social-post shape.\n" +
-    "- Do not merely paraphrase the original. Change the interpretation, not the post format.\n" +
-    "- Calm should clarify without becoming vague or therapist-like.\n" +
-    "- Bridge should translate why different people read the issue differently without becoming neutral mush.\n" +
-    "- Opposite should be the strongest credible counterargument, not a strawman.\n\n"
-  );
-}
-
-type PostShapeContext = {
-  communicationAct: string;
-  pointOfView: string;
-  tense: string;
-  structure: string;
-  directness: string;
-  punctuationStyle: string;
-  firstLine: string;
-  hasList: boolean;
-  hasQuestion: boolean;
-  hasDirectAddress: boolean;
-};
 
 function firstNonEmptyLine(value: string): string {
   return String(value || "")
@@ -305,18 +186,15 @@ function buildPostShapeContext(originalText: string): PostShapeContext {
     directness: raw.length < 140 ? "very direct / compact" : raw.length < 360 ? "concise" : "expanded",
     punctuationStyle: /[!?]{2,}/.test(raw) ? "emphatic" : /[.!?]$/.test(raw) ? "standard" : "minimal / no terminal punctuation",
     firstLine: firstNonEmptyLine(raw).slice(0, 220),
-    hasList: /^\s*(\d+[.)]|[-*•])\s+/m.test(raw),
-    hasQuestion: /\?/.test(raw),
-    hasDirectAddress: /\b(you|your|y'all|you all)\b/i.test(raw),
   };
 }
 
 function buildPostShapeGenerationPrompt(shape: PostShapeContext): string {
   return (
     "\n\nPOST-SHAPE PRESERVATION RULES:\n" +
-    "Write the lens as a standalone version of the original post, not as a reply to it.\n" +
-    "Preserve the same speaker voice, post shape, tense, point of view, and directness as much as possible.\n" +
-    "Change the interpretive frame for the lens, not the basic writing mode.\n" +
+    "Write the lens as a standalone version of the original post, not as a reply, explainer, or commentary about it.\n" +
+    "Preserve the same implied speaker, post shape, tense, point of view, and directness as much as possible.\n" +
+    "Change the interpretive frame for the lens. Do not change the speaker identity.\n" +
     `- Original communication act: ${shape.communicationAct}.\n` +
     `- Original point of view: ${shape.pointOfView}.\n` +
     `- Original tense: ${shape.tense}.\n` +
@@ -325,97 +203,12 @@ function buildPostShapeGenerationPrompt(shape: PostShapeContext): string {
     `- Original punctuation style: ${shape.punctuationStyle}.\n` +
     `- First line shape reference: ${shape.firstLine || "not available"}.\n` +
     "Hard constraints:\n" +
-    "- Do not write a reply to the original post.\n" +
-    "- Do not write about how people are reacting unless the original post does that.\n" +
-    "- Do not start with meta-framing such as 'some people,' 'others,' 'the real issue,' or 'what this shows' unless the original used that kind of framing.\n" +
+    "- Do not invent the speaker's job, family, identity, politics, location, biography, or personal experience.\n" +
+    "- Do not write as a different person. Write as the same implied speaker seeing the idea differently.\n" +
     "- Do not use numbered lists or bullets unless the original post used a list.\n" +
     "- If the original is a blunt claim, the rewrite should also be a blunt claim.\n" +
-    "- If the original is a question, the rewrite should usually remain a question.\n" +
-    "- If the original is a joke, preserve joke structure while changing the lens logic.\n" +
-    "- Preserve the same rough length and social-post rhythm.\n"
+    "- If the original is a question, the rewrite should usually remain a question.\n"
   );
-}
-
-async function reviseForRewriteDiscipline(
-  openai: OpenAI,
-  params: {
-    originalText: string;
-    draftText: string;
-    timelineLabel: string;
-    timelinePrompt: string;
-    postShape: PostShapeContext;
-    minWords: number;
-    maxWords: number;
-    searchGroundingPrompt: string;
-  }
-): Promise<string> {
-  const draft = String(params.draftText || "").trim();
-  if (!draft || draft.startsWith("(We couldn't generate")) return draft;
-
-  try {
-    const fix = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            GLOBAL_REWRITE_SYSTEM_PROMPT +
-            "\n\nYou are doing a final rewrite-discipline pass for FlipSide.\n" +
-            "Your job is to preserve the lens perspective while making the output read like the same speaker rewriting the same post from that lens.\n" +
-            "Only revise if needed. Output only the final post text.\n" +
-            `Keep it between ${params.minWords} and ${params.maxWords} words.\n` +
-            buildPostShapeGenerationPrompt(params.postShape),
-        },
-        {
-          role: "system",
-          content:
-            params.searchGroundingPrompt +
-            `Current lens: "${params.timelineLabel}". Do not mention this lens by name.\n\n` +
-            `Lens instructions:\n${params.timelinePrompt}`,
-        },
-        { role: "user", content: `Original post:\n${params.originalText}` },
-        { role: "user", content: `Draft lens rewrite to discipline:\n${draft}` },
-        {
-          role: "user",
-          content:
-            "Return the final rewritten post only. It must not sound like a reply, analysis, summary, explainer, or commentary about the original post.",
-        },
-      ],
-      max_tokens: 280,
-      temperature: 0.35,
-      presence_penalty: 0.1,
-      frequency_penalty: 0.1,
-    });
-
-    let raw: any = fix.choices[0]?.message?.content ?? "";
-    if (Array.isArray(raw)) {
-      raw = raw.map((part) => (typeof part === "string" ? part : (part as any).text ?? "")).join(" ");
-    }
-    const revised = String(raw || "").trim();
-    return revised || draft;
-  } catch (err) {
-    console.warn("[/api/flip] Rewrite discipline pass failed; using previous draft.", err);
-    return draft;
-  }
-}
-
-function searchGroundingForFirestore(context: SearchGroundingContext | null) {
-  if (!context?.ok) return null;
-  return {
-    mode: "search_grounded",
-    topicTags: context.topicTags,
-    originalClaim: context.originalClaim || null,
-    originalTone: context.originalTone || null,
-    contextSummary: context.contextSummary || null,
-    searchQueries: context.searchQueries,
-    lensAngles: {
-      calm: context.lensAngles.calm || null,
-      bridge: context.lensAngles.bridge || null,
-      cynical: context.lensAngles.cynical || null,
-      opposite: context.lensAngles.opposite || null,
-      playful: context.lensAngles.playful || null,
-    },
-  };
 }
 
 function normalizeLockedLenses(raw: any): Partial<Record<TimelineId, ImportedLockedLens>> {
@@ -451,250 +244,338 @@ function normalizeLockedLenses(raw: any): Partial<Record<TimelineId, ImportedLoc
   return out;
 }
 
+function parseCandidateList(raw: string, lensId: TimelineId): Candidate[] {
+  const parsed = extractJsonObject(raw);
+  const values = Array.isArray(parsed?.candidates) ? parsed.candidates : [];
+
+  return values
+    .map((item: any, index: number) => cleanText(item?.text ?? item, 900))
+    .filter(Boolean)
+    .slice(0, CANDIDATES_PER_LENS)
+    .map((text: string, index: number) => ({
+      id: `${lensId}_${index + 1}`,
+      lensId,
+      text,
+      score: 0,
+      reason: "not scored",
+      selected: false,
+      rejected: false,
+    }));
+}
+
+function fallbackScoreCandidate(candidate: Candidate, minWords: number, maxWords: number) {
+  const wc = wordCount(candidate.text);
+  let score = 70;
+  if (wc < minWords || wc > maxWords) score -= 18;
+  if (/^(some people|others|the real issue|what this shows|it is important|a nuanced)/i.test(candidate.text)) score -= 20;
+  if (candidate.text.includes("Original post") || candidate.text.includes(candidate.lensId)) score -= 20;
+  return Math.max(1, Math.min(100, score));
+}
+
+async function generateCandidates(openai: OpenAI, params: {
+  originalText: string;
+  lensId: TimelineId;
+  lensLabel: string;
+  lensPrompt: string;
+  shape: PostShapeContext;
+  minWords: number;
+  maxWords: number;
+  originalWords: number;
+}) {
+  const completion = await openai.chat.completions.create({
+    model: MODEL,
+    messages: [
+      {
+        role: "system",
+        content:
+          GLOBAL_REWRITE_SYSTEM_PROMPT +
+          "\n\nYou are generating candidate FlipSide lens rewrites. Generate options internally; the user will only see the best one.\n" +
+          "Return compact JSON only: {\"candidates\":[{\"text\":\"...\"},{\"text\":\"...\"}]}\n" +
+          `Generate exactly ${CANDIDATES_PER_LENS} distinct candidates for this one lens.\n` +
+          `Aim for roughly ${params.originalWords} words; acceptable range is ${params.minWords}-${params.maxWords} words.\n` +
+          "Usually 1-3 short sentences. Sentence fragments are okay.\n" +
+          "Do not include labels, bullets, preamble, quotation marks around the text, or hashtags unless the original used them naturally.\n" +
+          buildPostShapeGenerationPrompt(params.shape),
+      },
+      {
+        role: "system",
+        content:
+          `Current lens: ${params.lensLabel}. Do not mention this lens by name.\n\n` +
+          `Lens instructions:\n${params.lensPrompt}`,
+      },
+      { role: "user", content: `Original post:\n${params.originalText}` },
+    ],
+    max_tokens: 900,
+    temperature: 0.85,
+    presence_penalty: 0.35,
+    frequency_penalty: 0.25,
+    response_format: { type: "json_object" },
+  });
+
+  const rawContent = completion.choices[0]?.message?.content ?? "";
+  return parseCandidateList(String(rawContent), params.lensId);
+}
+
+async function scoreCandidates(openai: OpenAI, params: {
+  originalText: string;
+  lensLabel: string;
+  lensPrompt: string;
+  candidates: Candidate[];
+  minWords: number;
+  maxWords: number;
+}) {
+  if (!params.candidates.length) return [];
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are FlipSide's internal quality judge. Score candidate lens rewrites before users see them.\n" +
+            "Return compact JSON only: {\"scores\":[{\"id\":\"...\",\"score\":87,\"reason\":\"...\"}]}\n" +
+            "Score 1-100. Reward: anchor faithfulness, same-speaker discipline, novelty, lens fit, natural social-post rhythm, specificity, and share-worthiness.\n" +
+            "Penalize: paraphrase-only output, invented identity/biography, generic AI language, preachiness, explanations, summaries, strawmen, bland neutrality, and factual drift.\n" +
+            `Expected length range: ${params.minWords}-${params.maxWords} words.\n`,
+        },
+        {
+          role: "user",
+          content:
+            `Original post:\n${params.originalText}\n\n` +
+            `Lens: ${params.lensLabel}\n${params.lensPrompt}\n\n` +
+            `Candidates:\n${params.candidates.map((c) => `${c.id}: ${c.text}`).join("\n\n")}`,
+        },
+      ],
+      max_tokens: 500,
+      temperature: 0.15,
+      response_format: { type: "json_object" },
+    });
+
+    const parsed = extractJsonObject(String(completion.choices[0]?.message?.content ?? ""));
+    const scoreMap = new Map<string, { score: number; reason: string }>();
+
+    if (Array.isArray(parsed?.scores)) {
+      for (const item of parsed.scores) {
+        const id = String(item?.id || "");
+        if (!id) continue;
+        scoreMap.set(id, {
+          score: Math.max(1, Math.min(100, Number(item?.score || 0))),
+          reason: cleanText(item?.reason || "scored", 220),
+        });
+      }
+    }
+
+    return params.candidates
+      .map((candidate) => {
+        const judged = scoreMap.get(candidate.id);
+        const score = judged?.score || fallbackScoreCandidate(candidate, params.minWords, params.maxWords);
+        return {
+          ...candidate,
+          score,
+          reason: judged?.reason || candidate.reason,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+  } catch (err) {
+    console.warn("[/api/flip] Candidate judge failed; using heuristic scoring.", err);
+    return params.candidates
+      .map((candidate) => ({
+        ...candidate,
+        score: fallbackScoreCandidate(candidate, params.minWords, params.maxWords),
+        reason: "heuristic fallback",
+      }))
+      .sort((a, b) => b.score - a.score);
+  }
+}
+
+async function verifyRequestUser(req: Request) {
+  const token = extractBearerToken(req);
+  if (!token) return null;
+  try {
+    return await getAdminAuth().verifyIdToken(token);
+  } catch (err) {
+    console.warn("[/api/flip] Invalid Firebase ID token", err);
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
+  const startedAt = Date.now();
+
   try {
     const body = await req.json().catch(() => ({} as any));
-
     const postId = typeof body?.postId === "string" ? body.postId : undefined;
-    const text = typeof body?.text === "string" ? body.text : undefined;
+    const text = typeof body?.text === "string" ? body.text.trim() : "";
 
-    if (!postId || !text || !text.trim()) {
-      return NextResponse.json(
-        { ok: false, partialFailure: true, details: [], error: "Missing postId or text" },
-        { status: 200 }
-      );
+    if (!postId || !text) {
+      return jsonResponse({ ok: false, error: "Missing postId or text", details: [] }, 400);
     }
 
     if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-      return NextResponse.json(
-        {
-          ok: false,
-          partialFailure: true,
-          details: [],
-          error: "Missing FIREBASE_SERVICE_ACCOUNT_JSON (set it in Vercel Project → Settings → Environment Variables).",
-        },
-        { status: 200 }
-      );
+      return jsonResponse({ ok: false, error: "Missing FIREBASE_SERVICE_ACCOUNT_JSON", details: [] }, 500);
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        {
-          ok: false,
-          partialFailure: true,
-          details: [],
-          error: "Missing OPENAI_API_KEY (set it in Vercel Project → Settings → Environment Variables).",
-        },
-        { status: 200 }
-      );
+      return jsonResponse({ ok: false, error: "Missing OPENAI_API_KEY", details: [] }, 500);
+    }
+
+    const decoded = await verifyRequestUser(req);
+    if (!decoded?.uid) {
+      return jsonResponse({ ok: false, error: "Unauthorized. Sign in again and retry.", details: [] }, 401);
+    }
+
+    const adminDb = getAdminDb();
+    const postRef = adminDb.collection("posts").doc(postId);
+    const postSnap = await postRef.get();
+    if (!postSnap.exists) {
+      return jsonResponse({ ok: false, error: "Post not found", details: [] }, 404);
+    }
+
+    const post = postSnap.data() || {};
+    if (post.authorId && post.authorId !== decoded.uid) {
+      return jsonResponse({ ok: false, error: "You can only generate lenses for your own posts.", details: [] }, 403);
     }
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    let adminDb: ReturnType<typeof getAdminDb>;
-    try {
-      adminDb = getAdminDb();
-    } catch (e: any) {
-      console.error("[/api/flip] Firebase admin init error:", e);
-      return NextResponse.json(
-        {
-          ok: false,
-          partialFailure: true,
-          details: [],
-          error: `Firebase admin init error: ${e?.message ?? String(e)}`,
-        },
-        { status: 200 }
-      );
-    }
-
     const lockedLenses = normalizeLockedLenses(body?.lockedLenses ?? body?.importedLenses);
+    const runRef = postRef.collection("generationRuns").doc();
+    const wc = wordCount(text);
+    const minWords = Math.max(5, Math.floor(wc * 0.65));
+    const maxWords = Math.max(minWords + 5, Math.ceil(wc * 1.4));
+    const shape = buildPostShapeContext(text);
 
-    const searchGrounding = shouldUseSearchGrounding(body)
-      ? await buildSearchGroundingContext(openai, text)
-      : null;
+    await runRef.set({
+      id: runRef.id,
+      postId,
+      userId: decoded.uid,
+      promptVersion: PROMPT_VERSION,
+      judgeVersion: JUDGE_VERSION,
+      model: MODEL,
+      candidatesPerLens: CANDIDATES_PER_LENS,
+      status: "running",
+      startedAt: adminFieldValue.serverTimestamp(),
+    });
 
     const lockedResults = await Promise.all(
       Object.entries(lockedLenses).map(async ([lensId, locked]) => {
         const timelineId = lensId as TimelineId;
-
-        await adminDb
-          .collection("posts")
-          .doc(postId)
-          .collection("rewrites")
-          .doc(timelineId)
-          .set(
-            {
-              timelineId,
-              lensId: timelineId,
-              text: locked?.text ?? "",
-              sourceType: locked?.sourceType ?? "imported",
-              sourcePlatform: locked?.sourcePlatform ?? detectPlatform(locked?.sourceUrl),
-              sourceUrl: locked?.sourceUrl ?? null,
-              sourceAuthorName: locked?.sourceAuthorName ?? null,
-              sourceAuthorHandle: locked?.sourceAuthorHandle ?? null,
-              importedByUid: locked?.importedByUid ?? null,
-              locked: true,
-              createdAt: adminFieldValue.serverTimestamp(),
-              updatedAt: adminFieldValue.serverTimestamp(),
-            },
-            { merge: true }
-          );
+        await postRef.collection("rewrites").doc(timelineId).set(
+          {
+            timelineId,
+            lensId: timelineId,
+            text: locked?.text ?? "",
+            sourceType: locked?.sourceType ?? "imported",
+            sourcePlatform: locked?.sourcePlatform ?? detectPlatform(locked?.sourceUrl),
+            sourceUrl: locked?.sourceUrl ?? null,
+            sourceAuthorName: locked?.sourceAuthorName ?? null,
+            sourceAuthorHandle: locked?.sourceAuthorHandle ?? null,
+            importedByUid: locked?.importedByUid ?? null,
+            generationRunId: runRef.id,
+            locked: true,
+            updatedAt: adminFieldValue.serverTimestamp(),
+            createdAt: adminFieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
 
         return { timelineId, ok: true, sourceType: locked?.sourceType ?? "imported", locked: true };
       })
     );
 
-    const wc = wordCount(text);
-    const minWords = Math.max(5, Math.floor(wc * 0.65));
-    const maxWords = Math.max(minWords + 5, Math.ceil(wc * 1.4));
-    const postShape = buildPostShapeContext(text);
     const aiTimelines = TIMELINE_LIST.filter((timeline) => !lockedLenses[timeline.id]);
-
     const aiResults = await Promise.all(
       aiTimelines.map(async (timeline) => {
         const timelineId = timeline.id as TimelineId;
-
         try {
-          const completion = await openai.chat.completions.create({
-            model: "gpt-4.1-mini",
-            messages: [
-              {
-                role: "system",
-                content:
-                  GLOBAL_REWRITE_SYSTEM_PROMPT +
-                  "\n\nFORMAT RULES:\n" +
-                  `- Aim for roughly ${wc} words; acceptable range is ${minWords}–${maxWords} words.\n` +
-                  "- Usually 1–3 short sentences. Sentence fragments are okay.\n" +
-                  "- Output only the rewritten post text.\n" +
-                  "- No labels, no bullets, no preamble, no quotation marks around the output.\n" +
-                  "- No hashtags unless the original post used them naturally.\n" +
-                  "- Preserve the same core idea. Change the human perspective, not the topic.\n" +
-                  buildPostShapeGenerationPrompt(postShape),
-              },
-              {
-                role: "system",
-                content:
-                  buildSearchGroundingGenerationPrompt(searchGrounding, timelineId, timeline.label) +
-                  `Current lens: "${timeline.label}". Do not mention this lens by name.\n\n` +
-                  `Lens instructions:\n${timeline.prompt}`,
-              },
-              { role: "user", content: `Original post:\n${text}` },
-            ],
-            max_tokens: 280,
-            temperature: 0.72,
-            presence_penalty: 0.35,
-            frequency_penalty: 0.25,
-          });
-
-          let rawContent: any = completion.choices[0]?.message?.content ?? "";
-          if (Array.isArray(rawContent)) {
-            rawContent = rawContent
-              .map((part) => (typeof part === "string" ? part : (part as any).text ?? ""))
-              .join(" ");
-          }
-
-          let finalText =
-            (rawContent || "").toString().trim() ||
-            "(We couldn't generate this rewrite right now.)";
-
-          const outWc = wordCount(finalText);
-          if (finalText && (outWc < minWords || outWc > maxWords)) {
-            const fix = await openai.chat.completions.create({
-              model: "gpt-4.1-mini",
-              messages: [
-                {
-                  role: "system",
-                  content:
-                    GLOBAL_REWRITE_SYSTEM_PROMPT +
-                    "\n\nRevise the draft only enough to fit the format.\n" +
-                    `- Keep it between ${minWords} and ${maxWords} words.\n` +
-                    "- Keep the same human instinct/personality.\n" +
-                    "- Keep the same core idea.\n" +
-                    "- Do not polish away the human rhythm.\n" +
-                    "- Output only the revised post text.\n" +
-                    buildPostShapeGenerationPrompt(postShape),
-                },
-                {
-                  role: "system",
-                  content:
-                    buildSearchGroundingGenerationPrompt(searchGrounding, timelineId, timeline.label) +
-                    `Lens: "${timeline.label}". Do not mention this lens by name.\n\n` +
-                    `Lens instructions:\n${timeline.prompt}`,
-                },
-                { role: "user", content: `Original post:\n${text}` },
-                { role: "user", content: `Draft rewrite to fix:\n${finalText}` },
-              ],
-              max_tokens: 280,
-              temperature: 0.45,
-            });
-
-            let fixed: any = fix.choices[0]?.message?.content ?? "";
-            if (Array.isArray(fixed)) {
-              fixed = fixed
-                .map((part) => (typeof part === "string" ? part : (part as any).text ?? ""))
-                .join(" ");
-            }
-            const fixedText = (fixed || "").toString().trim();
-            if (fixedText) finalText = fixedText;
-          }
-
-          finalText = await reviseForRewriteDiscipline(openai, {
+          const candidates = await generateCandidates(openai, {
             originalText: text,
-            draftText: finalText,
-            timelineLabel: timeline.label,
-            timelinePrompt: timeline.prompt,
-            postShape,
+            lensId: timelineId,
+            lensLabel: timeline.label,
+            lensPrompt: timeline.prompt,
+            shape,
             minWords,
             maxWords,
-            searchGroundingPrompt: buildSearchGroundingGenerationPrompt(searchGrounding, timelineId, timeline.label),
+            originalWords: wc,
           });
 
-          await adminDb
-            .collection("posts")
-            .doc(postId)
-            .collection("rewrites")
-            .doc(timelineId)
-            .set(
-              {
-                timelineId,
-                lensId: timelineId,
-                text: finalText,
-                sourceType: "ai",
-                generationMode: searchGrounding?.ok ? "search_grounded" : "classic",
-                searchGrounded: !!searchGrounding?.ok,
-                locked: false,
-                createdAt: adminFieldValue.serverTimestamp(),
-                updatedAt: adminFieldValue.serverTimestamp(),
-              },
-              { merge: true }
-            );
+          if (!candidates.length) throw new Error("No candidates generated");
 
-          return { timelineId, ok: true, sourceType: "ai", locked: false };
+          const scored = await scoreCandidates(openai, {
+            originalText: text,
+            lensLabel: timeline.label,
+            lensPrompt: timeline.prompt,
+            candidates,
+            minWords,
+            maxWords,
+          });
+
+          const selected = scored[0] || candidates[0];
+          const finalCandidates = scored.map((candidate) => ({
+            ...candidate,
+            selected: candidate.id === selected.id,
+            rejected: candidate.id !== selected.id,
+          }));
+
+          await Promise.all(
+            finalCandidates.map((candidate) =>
+              runRef.collection("candidates").doc(candidate.id).set({
+                ...candidate,
+                promptVersion: PROMPT_VERSION,
+                judgeVersion: JUDGE_VERSION,
+                model: MODEL,
+                createdAt: adminFieldValue.serverTimestamp(),
+              })
+            )
+          );
+
+          await postRef.collection("rewrites").doc(timelineId).set(
+            {
+              timelineId,
+              lensId: timelineId,
+              text: selected.text,
+              sourceType: "ai",
+              generationMode: "ranked_candidates",
+              searchGrounded: false,
+              generationRunId: runRef.id,
+              promptVersion: PROMPT_VERSION,
+              judgeVersion: JUDGE_VERSION,
+              model: MODEL,
+              candidateId: selected.id,
+              candidateScore: selected.score,
+              candidateReason: selected.reason,
+              locked: false,
+              updatedAt: adminFieldValue.serverTimestamp(),
+              createdAt: adminFieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+          return {
+            timelineId,
+            ok: true,
+            sourceType: "ai",
+            locked: false,
+            selectedCandidateId: selected.id,
+            selectedScore: selected.score,
+          };
         } catch (err: any) {
           console.error("[/api/flip] Error generating rewrite for", timelineId, err);
-
-          try {
-            await adminDb
-              .collection("posts")
-              .doc(postId)
-              .collection("rewrites")
-              .doc(timelineId)
-              .set(
-                {
-                  timelineId,
-                  lensId: timelineId,
-                  text: "(We couldn't generate this rewrite right now.)",
-                  sourceType: "ai",
-                  locked: false,
-                  error: String(err?.message || err),
-                  createdAt: adminFieldValue.serverTimestamp(),
-                  updatedAt: adminFieldValue.serverTimestamp(),
-                },
-                { merge: true }
-              );
-          } catch (writeErr) {
-            console.error("[/api/flip] Failed to write stub rewrite:", writeErr);
-          }
+          await postRef.collection("rewrites").doc(timelineId).set(
+            {
+              timelineId,
+              lensId: timelineId,
+              text: "(We couldn't generate this rewrite right now.)",
+              sourceType: "ai",
+              generationMode: "ranked_candidates",
+              locked: false,
+              error: String(err?.message || err),
+              generationRunId: runRef.id,
+              updatedAt: adminFieldValue.serverTimestamp(),
+              createdAt: adminFieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
 
           return {
             timelineId,
@@ -708,43 +589,51 @@ export async function POST(req: Request) {
     );
 
     const results = [...lockedResults, ...aiResults];
-    const hadErrors = results.some((r) => !r.ok);
+    const hadErrors = results.some((result) => !result.ok);
+    const latencyMs = Date.now() - startedAt;
 
-    await adminDb
-      .collection("posts")
-      .doc(postId)
-      .set(
-        {
-          hasImportedLenses: Object.keys(lockedLenses).length > 0,
-          importedLensCount: Object.keys(lockedLenses).length,
-          lastAiGenerationMode: searchGrounding?.ok ? "search_grounded" : "classic",
-          searchGrounding: searchGroundingForFirestore(searchGrounding),
-          updatedAt: adminFieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-    return NextResponse.json(
+    await runRef.set(
       {
-        ok: true,
-        partialFailure: hadErrors,
-        details: results,
-        generationMode: searchGrounding?.ok ? "search_grounded" : "classic",
-        searchGrounded: !!searchGrounding?.ok,
+        status: hadErrors ? "partial_failure" : "completed",
+        completedAt: adminFieldValue.serverTimestamp(),
+        latencyMs,
+        results,
       },
-      { status: 200 }
+      { merge: true }
     );
+
+    await postRef.set(
+      {
+        hasImportedLenses: Object.keys(lockedLenses).length > 0,
+        importedLensCount: Object.keys(lockedLenses).length,
+        lastAiGenerationMode: "ranked_candidates",
+        lastGenerationRunId: runRef.id,
+        promptVersion: PROMPT_VERSION,
+        updatedAt: adminFieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    return jsonResponse({
+      ok: true,
+      partialFailure: hadErrors,
+      details: results,
+      generationMode: "ranked_candidates",
+      promptVersion: PROMPT_VERSION,
+      judgeVersion: JUDGE_VERSION,
+      generationRunId: runRef.id,
+      latencyMs,
+    });
   } catch (err: any) {
     console.error("[/api/flip] Fatal error:", err);
-
-    return NextResponse.json(
+    return jsonResponse(
       {
         ok: false,
         partialFailure: true,
         details: [],
         error: err?.message ?? "Internal error generating rewrites",
       },
-      { status: 200 }
+      500
     );
   }
 }
