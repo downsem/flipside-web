@@ -5,13 +5,7 @@ import { useEffect, useState } from "react";
 import {
   doc,
   getDoc,
-  updateDoc,
-  increment,
-  addDoc,
-  collection,
   deleteDoc,
-  serverTimestamp,
-  setDoc,
 } from "firebase/firestore";
 import { db, auth } from "@/app/firebase";
 import SwipeDeck from "./SwipeDeck";
@@ -41,46 +35,6 @@ export default function PostCard({ post, selectedTimeline }: PostCardProps) {
     }
     fetchAuthor();
   }, [post.authorId, post.authorIsAnonymous]);
-
-  async function recordLensStat(userId: string, timelineId: string, value: number) {
-    const statRef = doc(db, "users", userId, "lensStats", "default");
-    const fieldName = `${timelineId}_${value > 0 ? "up" : "down"}`;
-
-    await setDoc(statRef, { [fieldName]: increment(1) }, { merge: true });
-  }
-
-  async function handleVote(timelineId: "original" | TimelineId, value: number) {
-    if (!user) {
-      alert("Sign in to vote.");
-      return;
-    }
-
-    const targetRef =
-      timelineId === "original"
-        ? doc(db, "posts", post.id)
-        : doc(db, "posts", post.id, "rewrites", timelineId);
-
-    await updateDoc(targetRef, { votes: increment(value) });
-    await recordLensStat(user.uid, timelineId, value);
-  }
-
-  async function handleReply(timelineId: "original" | TimelineId, text: string) {
-    if (!user) {
-      alert("Sign in to reply.");
-      return;
-    }
-
-    const path =
-      timelineId === "original"
-        ? collection(db, "posts", post.id, "replies")
-        : collection(db, "posts", post.id, "rewrites", timelineId, "replies");
-
-    await addDoc(path, {
-      text,
-      authorId: user.uid,
-      createdAt: serverTimestamp(),
-    });
-  }
 
   async function handleDelete() {
     if (!user || user.uid !== post.authorId) return;
@@ -130,8 +84,6 @@ export default function PostCard({ post, selectedTimeline }: PostCardProps) {
       <SwipeDeck
         post={post}
         selectedTimeline={selectedTimeline}
-        onVote={handleVote}
-        onReply={handleReply}
       />
     </div>
   );
