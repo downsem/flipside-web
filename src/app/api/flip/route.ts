@@ -389,6 +389,106 @@ async function scoreCandidates(openai: OpenAI, params: {
   }
 }
 
+
+async function scoreCandidateGroups(openai: OpenAI, params: {
+  originalText: string;
+  groups: Array<{
+    lensId: TimelineId;
+    lensLabel: string;
+    lensPrompt: string;
+    candidates: Candidate[];
+  }>;
+  minWords: number;
+  maxWords: number;
+}) {
+  const out = new Map<TimelineId, Candidate[]>();
+  if (!params.groups.length) return out;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are FlipSide's internal quality judge. Score candidate lens rewrites before users see them.\n" +
+            "Return compact JSON only: {\"scores\":[{\"id\":\"...\",\"score\":87,\"reason\":\"...\"}]}\n" +
+            "Score 1-100. Reward: anchor faithfulness, same-speaker discipline, novelty, lens fit, natural social-post rhythm, specificity, and share-worthiness.\n" +
+            "Penalize: paraphrase-only output, invented identity/biography, generic AI language, preachiness, explanations, summaries, strawmen, bland neutrality, and factual drift.\n" +
+            `Expected length range: ${params.minWords}-${params.maxWords} words.\n` +
+            "Judge every candidate across every lens in one pass. Do not select globally; score each candidate on its own quality for its lens.",
+        },
+        {
+          role: "user",
+          content:
+            `Original post:\n${params.originalText}\n\n` +
+            params.groups
+              .map((group) =>
+                [
+                  `Lens: ${group.lensLabel}`,
+                  `Lens instructions: ${group.lensPrompt}`,
+                  "Candidates:",
+                  group.candidates.map((c) => `${c.id}: ${c.text}`).join("\n\n"),
+                ].join("\n")
+              )
+              .join("\n\n---\n\n"),
+        },
+      ],
+      max_tokens: 900,
+      temperature: 0.12,
+      response_format: { type: "json_object" },
+    });
+
+    const parsed = extractJsonObject(String(completion.choices[0]?.message?.content ?? ""));
+    const scoreMap = new Map<string, { score: number; reason: string }>();
+
+    if (Array.isArray(parsed?.scores)) {
+      for (const item of parsed.scores) {
+        const id = String(item?.id || "");
+        if (!id) continue;
+        scoreMap.set(id, {
+          score: Math.max(1, Math.min(100, Number(item?.score || 0))),
+          reason: cleanText(item?.reason || "scored", 220),
+        });
+      }
+    }
+
+    for (const group of params.groups) {
+      out.set(
+        group.lensId,
+        group.candidates
+          .map((candidate) => {
+            const judged = scoreMap.get(candidate.id);
+            const score = judged?.score || fallbackScoreCandidate(candidate, params.minWords, params.maxWords);
+            return {
+              ...candidate,
+              score,
+              reason: judged?.reason || candidate.reason,
+            };
+          })
+          .sort((a, b) => b.score - a.score)
+      );
+    }
+
+    return out;
+  } catch (err) {
+    console.warn("[/api/flip] Batched candidate judge failed; using heuristic scoring.", err);
+    for (const group of params.groups) {
+      out.set(
+        group.lensId,
+        group.candidates
+          .map((candidate) => ({
+            ...candidate,
+            score: fallbackScoreCandidate(candidate, params.minWords, params.maxWords),
+            reason: "heuristic fallback",
+          }))
+          .sort((a, b) => b.score - a.score)
+      );
+    }
+    return out;
+  }
+}
+
 async function verifyRequestUser(req: Request) {
   const token = extractBearerToken(req);
   if (!token) return null;
@@ -453,6 +553,7 @@ export async function POST(req: Request) {
       judgeVersion: JUDGE_VERSION,
       model: MODEL,
       candidatesPerLens: CANDIDATES_PER_LENS,
+      judgeMode: "batched",
       status: "running",
       startedAt: adminFieldValue.serverTimestamp(),
     });
@@ -484,7 +585,16 @@ export async function POST(req: Request) {
     );
 
     const aiTimelines = TIMELINE_LIST.filter((timeline) => !lockedLenses[timeline.id]);
-    const aiResults = await Promise.all(
+
+    // Actual-speed path: generate every lens candidate set in parallel, then run
+    // one batched judge call across all candidates instead of one judge call per lens.
+    const generatedLensGroups: Array<{
+      timeline: (typeof TIMELINE_LIST)[number];
+      timelineId: TimelineId;
+      candidates: Candidate[];
+      ok: boolean;
+      error?: string;
+    }> = await Promise.all(
       aiTimelines.map(async (timeline) => {
         const timelineId = timeline.id as TimelineId;
         try {
@@ -500,17 +610,74 @@ export async function POST(req: Request) {
           });
 
           if (!candidates.length) throw new Error("No candidates generated");
+          return { timeline, timelineId, candidates, ok: true };
+        } catch (err: any) {
+          console.error("[/api/flip] Error generating candidates for", timelineId, err);
+          return {
+            timeline,
+            timelineId,
+            candidates: [],
+            ok: false,
+            error: String(err?.message || err),
+          };
+        }
+      })
+    );
 
-          const scored = await scoreCandidates(openai, {
-            originalText: text,
-            lensLabel: timeline.label,
-            lensPrompt: timeline.prompt,
-            candidates,
-            minWords,
-            maxWords,
-          });
+    const scoredByLens = await scoreCandidateGroups(openai, {
+      originalText: text,
+      groups: generatedLensGroups
+        .filter((group) => group.ok && group.candidates.length)
+        .map((group) => ({
+          lensId: group.timelineId,
+          lensLabel: group.timeline.label,
+          lensPrompt: group.timeline.prompt,
+          candidates: group.candidates,
+        })),
+      minWords,
+      maxWords,
+    });
 
-          const selected = scored[0] || candidates[0];
+    const aiResults = await Promise.all(
+      generatedLensGroups.map(async (group) => {
+        const { timelineId } = group;
+
+        if (!group.ok) {
+          await postRef.collection("rewrites").doc(timelineId).set(
+            {
+              timelineId,
+              lensId: timelineId,
+              text: "(We couldn't generate this rewrite right now.)",
+              sourceType: "ai",
+              generationMode: "ranked_candidates",
+              locked: false,
+              error: group.error || "Candidate generation failed",
+              generationRunId: runRef.id,
+              updatedAt: adminFieldValue.serverTimestamp(),
+              createdAt: adminFieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+          return {
+            timelineId,
+            ok: false,
+            sourceType: "ai",
+            locked: false,
+            error: group.error || "Candidate generation failed",
+          };
+        }
+
+        try {
+          const scored = scoredByLens.get(timelineId) || group.candidates
+            .map((candidate) => ({
+              ...candidate,
+              score: fallbackScoreCandidate(candidate, minWords, maxWords),
+              reason: "heuristic fallback",
+            }))
+            .sort((a, b) => b.score - a.score);
+
+          const selected = scored[0] || group.candidates[0];
           const finalCandidates = scored.map((candidate) => ({
             ...candidate,
             selected: candidate.id === selected.id,
@@ -523,6 +690,7 @@ export async function POST(req: Request) {
                 ...candidate,
                 promptVersion: PROMPT_VERSION,
                 judgeVersion: JUDGE_VERSION,
+                judgeMode: "batched",
                 model: MODEL,
                 createdAt: adminFieldValue.serverTimestamp(),
               })
@@ -540,6 +708,7 @@ export async function POST(req: Request) {
               generationRunId: runRef.id,
               promptVersion: PROMPT_VERSION,
               judgeVersion: JUDGE_VERSION,
+              judgeMode: "batched",
               model: MODEL,
               candidateId: selected.id,
               candidateScore: selected.score,
@@ -560,7 +729,7 @@ export async function POST(req: Request) {
             selectedScore: selected.score,
           };
         } catch (err: any) {
-          console.error("[/api/flip] Error generating rewrite for", timelineId, err);
+          console.error("[/api/flip] Error writing selected rewrite for", timelineId, err);
           await postRef.collection("rewrites").doc(timelineId).set(
             {
               timelineId,
