@@ -426,7 +426,7 @@ export async function POST(req: Request) {
       const snap = await adminDb.collection("posts").doc(postId).get();
       if (snap.exists) {
         postData = snap.data();
-        const ownerUid = postData?.uid || postData?.userId || postData?.authorUid || postData?.createdByUid;
+        const ownerUid = postData?.uid || postData?.userId || postData?.authorId || postData?.authorUid || postData?.createdByUid;
         if (ownerUid && ownerUid !== user.uid) {
           return jsonResponse({ ok: false, error: "Forbidden" }, 403);
         }
