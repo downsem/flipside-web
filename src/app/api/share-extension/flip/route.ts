@@ -1,5 +1,7 @@
 import OpenAI from "openai";
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
+import { getAdminDb, adminFieldValue } from "@/lib/firebaseAdmin";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -8,6 +10,7 @@ type LensId = "original" | "opposite" | "cynical" | "playful" | "bridge" | "calm
 
 const MODEL = process.env.OPENAI_SHARE_EXTENSION_MODEL || process.env.OPENAI_FLIP_MODEL || "gpt-4.1-mini";
 const LENS_IDS: LensId[] = ["opposite", "cynical", "playful", "bridge", "calm"];
+const COLLECTION = "shareExtensionDecks";
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, { status });
@@ -63,6 +66,10 @@ function targetRange(text: string) {
   const minWords = Math.max(5, Math.floor(wc * 0.65));
   const maxWords = Math.max(minWords + 5, Math.ceil(wc * 1.35));
   return { minWords, maxWords };
+}
+
+function makeDeckId() {
+  return `share_${Date.now()}_${randomUUID().slice(0, 8)}`;
 }
 
 async function hydrateSource(origin: string, url: string, sharedText: string) {
@@ -127,6 +134,35 @@ function normalizeDeck(parsed: Record<string, unknown>, originalText: string) {
   return deck;
 }
 
+async function storeShareExtensionDeck(deckId: string, payload: Record<string, unknown>) {
+  const adminDb = getAdminDb();
+  await adminDb.collection(COLLECTION).doc(deckId).set({
+    deckId,
+    payload,
+    createdAt: adminFieldValue.serverTimestamp(),
+    updatedAt: adminFieldValue.serverTimestamp(),
+    source: "ios_share_extension",
+  }, { merge: true });
+}
+
+export async function GET(req: Request) {
+  try {
+    const url = new URL(req.url);
+    const deckId = cleanText(url.searchParams.get("deckId"), 120);
+    if (!deckId) return jsonResponse({ ok: false, error: "Missing deckId" }, 400);
+
+    const snap = await getAdminDb().collection(COLLECTION).doc(deckId).get();
+    if (!snap.exists) return jsonResponse({ ok: false, error: "Deck not found" }, 404);
+
+    const data = snap.data() || {};
+    const payload = (data.payload || {}) as Record<string, unknown>;
+    return jsonResponse({ ...payload, ok: true, deckId, stored: true });
+  } catch (err: any) {
+    console.error("[/api/share-extension/flip] GET failed", err);
+    return jsonResponse({ ok: false, error: err?.message || "Could not load Flip Deck" }, 500);
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -178,10 +214,11 @@ export async function POST(req: Request) {
     const raw = completion.choices[0]?.message?.content || "{}";
     const parsed = JSON.parse(stripCodeFence(raw)) as Record<string, unknown>;
     const deck = normalizeDeck(parsed, sourceText);
+    const deckId = makeDeckId();
 
-    return jsonResponse({
+    const payload = {
       ok: true,
-      deckId: `share_${Date.now()}`,
+      deckId,
       promptVersion: "share_extension_flip_v1",
       model: MODEL,
       sourcePost: {
@@ -193,7 +230,15 @@ export async function POST(req: Request) {
         importMethod: imported?.importMethod || (url ? "url_fallback" : "shared_text"),
       },
       deck,
-    });
+    };
+
+    try {
+      await storeShareExtensionDeck(deckId, payload);
+      return jsonResponse({ ...payload, stored: true });
+    } catch (storageError: any) {
+      console.error("[/api/share-extension/flip] storage failed", storageError);
+      return jsonResponse({ ...payload, stored: false, storageError: storageError?.message || "storage_failed" });
+    }
   } catch (err: any) {
     console.error("[/api/share-extension/flip] failed", err);
     return jsonResponse({ ok: false, error: err?.message || "Could not generate Flip Deck" }, 500);
