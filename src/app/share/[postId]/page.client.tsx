@@ -12,11 +12,34 @@ import type { TimelineId } from "@/theme/timelines";
 type Post = any;
 type LensParam = "original" | TimelineId;
 
+type ShareExtensionDeck = {
+  id: string;
+  sourcePost?: any;
+  deck: Record<string, string>;
+};
+
+function cleanText(value: unknown): string {
+  return String(value || "").trim();
+}
+
+function platformLabel(value: unknown): string {
+  const platform = cleanText(value).toLowerCase();
+  if (platform === "x") return "X";
+  if (platform === "bluesky") return "Bluesky";
+  if (platform === "threads") return "Threads";
+  if (platform === "instagram") return "Instagram";
+  if (platform === "tiktok") return "TikTok";
+  if (platform === "youtube") return "YouTube";
+  if (platform === "reddit") return "Reddit";
+  return platform ? platform.charAt(0).toUpperCase() + platform.slice(1) : "Source";
+}
+
 export default function SharePageClient({ postId }: { postId: string }) {
   const searchParams = useSearchParams();
   const lens = (searchParams.get("lens") || "original") as LensParam;
 
   const [post, setPost] = useState<Post | null>(null);
+  const [extensionDeck, setExtensionDeck] = useState<ShareExtensionDeck | null>(null);
   const [rewrites, setRewrites] = useState<Record<TimelineId, any>>({
     calm: undefined,
     bridge: undefined,
@@ -26,36 +49,73 @@ export default function SharePageClient({ postId }: { postId: string }) {
   });
   const [loading, setLoading] = useState(true);
 
-  // Load post
+  // Load a normal app post first. If it is missing, fall back to a stored
+  // share-extension deck so extension-created links can open the exact deck.
   useEffect(() => {
-    if (!postId) return;
+    if (!postId) return undefined;
 
+    let active = true;
     const ref = doc(db, "posts", postId);
+
+    async function loadShareExtensionDeck(deckId: string) {
+      try {
+        const res = await fetch(`/api/share-extension/flip?deckId=${encodeURIComponent(deckId)}`);
+        const json = await res.json().catch(() => null);
+
+        if (!active) return;
+
+        if (res.ok && json?.ok && json?.deck) {
+          setPost(null);
+          setExtensionDeck({
+            id: deckId,
+            sourcePost: json.sourcePost || {},
+            deck: json.deck || {},
+          });
+        } else {
+          setPost(null);
+          setExtensionDeck(null);
+        }
+      } catch (err) {
+        console.error("Error loading share-extension deck:", err);
+        if (active) {
+          setPost(null);
+          setExtensionDeck(null);
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
 
     const unsub = onSnapshot(
       ref,
       (snap) => {
-        if (!snap.exists()) {
-          setPost(null);
+        if (!active) return;
+
+        if (snap.exists()) {
+          setPost({ id: snap.id, ...snap.data() });
+          setExtensionDeck(null);
           setLoading(false);
           return;
         }
-        setPost({ id: snap.id, ...snap.data() });
-        setLoading(false);
+
+        loadShareExtensionDeck(postId);
       },
       (err) => {
         console.error("Error loading post:", err);
-        setPost(null);
-        setLoading(false);
+        loadShareExtensionDeck(postId);
       }
     );
 
-    return () => unsub();
+    return () => {
+      active = false;
+      unsub();
+    };
   }, [postId]);
 
-  // Load rewrites
+  // Load rewrites only for real app posts. Share-extension decks already carry
+  // their generated lens text in the stored deck payload.
   useEffect(() => {
-    if (!postId) return;
+    if (!postId || !post) return undefined;
 
     const rewritesRef = collection(db, "posts", postId, "rewrites");
     const q = query(rewritesRef);
@@ -83,9 +143,43 @@ export default function SharePageClient({ postId }: { postId: string }) {
     );
 
     return () => unsub();
-  }, [postId]);
+  }, [postId, post]);
+
+  const lensOptions = useMemo(
+    () => [
+      { id: "original" as LensParam, label: "Original", icon: undefined },
+      ...TIMELINE_LIST.map((item) => ({
+        id: item.id as LensParam,
+        label: item.label,
+        icon: item.icon,
+      })),
+    ],
+    []
+  );
 
   const card = useMemo(() => {
+    if (extensionDeck) {
+      if (lens === "original") {
+        return {
+          id: "original" as const,
+          label: "Original",
+          icon: undefined,
+          text:
+            cleanText(extensionDeck.deck?.original) ||
+            cleanText(extensionDeck.sourcePost?.text) ||
+            "Open the original source to view this post.",
+        };
+      }
+
+      const spec = TIMELINE_LIST.find((t) => t.id === lens);
+      return {
+        id: lens,
+        label: spec?.label ?? lens,
+        icon: spec?.icon,
+        text: cleanText(extensionDeck.deck?.[lens]) || "(Missing lens text.)",
+      };
+    }
+
     if (!post) return null;
 
     if (lens === "original") {
@@ -105,18 +199,25 @@ export default function SharePageClient({ postId }: { postId: string }) {
       icon: spec?.icon,
       text: rw?.text || "(Generating rewrite…)",
     };
-  }, [post, lens, rewrites]);
+  }, [post, extensionDeck, lens, rewrites]);
 
   const origin =
     typeof window !== "undefined" ? window.location.origin : "";
-  const fullDeckUrl = origin ? `${origin}/post/${postId}` : `/post/${postId}`;
 
-  const hasSource = !!post?.sourceUrl;
-  const sourceLabel =
-    post?.sourcePlatform && post.sourcePlatform !== "other"
-      ? post.sourcePlatform.charAt(0).toUpperCase() +
-        post.sourcePlatform.slice(1)
-      : "original post";
+  const fullDeckUrl = origin
+    ? post
+      ? `${origin}/post/${postId}`
+      : `${origin}/share/${postId}`
+    : post
+      ? `/post/${postId}`
+      : `/share/${postId}`;
+
+  const displayDeckUrl = fullDeckUrl.replace(/^https?:\/\//, "");
+
+  const sourcePost = extensionDeck?.sourcePost || {};
+  const sourceUrl = post?.sourceUrl || sourcePost.url || sourcePost.sourceUrl || "";
+  const hasSource = !!sourceUrl;
+  const sourceLabel = platformLabel(post?.sourcePlatform || sourcePost.platform || "source");
 
   if (loading) {
     return (
@@ -126,12 +227,12 @@ export default function SharePageClient({ postId }: { postId: string }) {
     );
   }
 
-  if (!post || !card) {
+  if (!post && !extensionDeck) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5">
           <p className="text-sm font-medium text-slate-900">
-            This share link is invalid (post missing or deleted).
+            This share link is invalid, missing, or deleted.
           </p>
           <div className="mt-3">
             <Link href="/feed" className="text-xs underline text-slate-800">
@@ -139,6 +240,14 @@ export default function SharePageClient({ postId }: { postId: string }) {
             </Link>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (!card) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <p className="text-xs text-slate-500">Loading lens…</p>
       </div>
     );
   }
@@ -153,10 +262,10 @@ export default function SharePageClient({ postId }: { postId: string }) {
           </div>
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-semibold tracking-tight">
-              Flipside
+              FlipSide
             </span>
             <span className="text-[10px] text-slate-500">
-              Shared lens view
+              Shared Flip Deck
             </span>
           </div>
         </div>
@@ -165,7 +274,7 @@ export default function SharePageClient({ postId }: { postId: string }) {
           href="/feed"
           className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-800 shadow-sm"
         >
-          Back to feed
+          Open FlipSide
         </Link>
       </header>
 
@@ -173,7 +282,7 @@ export default function SharePageClient({ postId }: { postId: string }) {
       <main className="flex-1 px-4 py-6 flex justify-center">
         <div className="w-full max-w-xl space-y-3">
           {/* Lens badge row */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 border border-slate-200 shadow-sm">
               <span className="text-[11px] font-medium text-slate-700">
                 {card.icon && <span className="mr-1">{card.icon}</span>}
@@ -189,18 +298,40 @@ export default function SharePageClient({ postId }: { postId: string }) {
             </a>
           </div>
 
+          {/* Lens nav */}
+          <div className="flex flex-wrap gap-2">
+            {lensOptions.map((option) => {
+              const active = option.id === lens;
+              return (
+                <Link
+                  key={option.id}
+                  href={`/share/${postId}?lens=${option.id}`}
+                  className={[
+                    "rounded-full border px-3 py-1 text-[11px] font-medium shadow-sm",
+                    active
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-700",
+                  ].join(" ")}
+                >
+                  {option.icon ? `${option.icon} ` : ""}
+                  {option.label}
+                </Link>
+              );
+            })}
+          </div>
+
           {/* Attribution */}
           {hasSource && (
             <div className="text-[11px] text-slate-500">
-              <span>This Flip was originally posted on: </span>
+              <span>This Flip was originally posted on {sourceLabel}: </span>
               <a
-                href={post.sourceUrl}
+                href={sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline break-all"
                 title={sourceLabel}
               >
-                {post.sourceUrl}
+                {sourceUrl}
               </a>
             </div>
           )}
@@ -211,22 +342,22 @@ export default function SharePageClient({ postId }: { postId: string }) {
               {card.text}
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
+            <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between gap-3">
               <span className="text-[10px] text-slate-500">
-                See this post through five lenses on Flipside.
+                See this post through five lenses on FlipSide.
               </span>
               <a
                 href={fullDeckUrl}
-                className="text-[11px] font-medium underline text-slate-800"
+                className="text-[11px] font-medium underline text-slate-800 break-all text-right"
               >
-                flipside.app/post/{postId}
+                {displayDeckUrl}
               </a>
             </div>
           </div>
 
           {/* Footer helper */}
           <p className="text-[10px] text-slate-500">
-            Tip: take a screenshot of this page to share anywhere.
+            Swipe the shared cards, or use the lens buttons above to open a specific perspective.
           </p>
         </div>
       </main>
