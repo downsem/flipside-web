@@ -49,27 +49,6 @@ function cleanText(value: unknown): string {
   return String(value || "").trim();
 }
 
-function platformLabel(value: unknown): string {
-  const platform = cleanText(value).toLowerCase();
-  if (platform === "x") return "X";
-  if (platform === "bluesky") return "Bluesky";
-  if (platform === "threads") return "Threads";
-  if (platform === "instagram") return "Instagram";
-  if (platform === "tiktok") return "TikTok";
-  if (platform === "youtube") return "YouTube";
-  if (platform === "reddit") return "Reddit";
-  return platform ? platform.charAt(0).toUpperCase() + platform.slice(1) : "Source";
-}
-
-function initials(name?: string) {
-  const clean = cleanText(name);
-  if (!clean) return "FS";
-  return clean
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "FS";
-}
 
 function byLensUrl(postId: string, lensId: LensParam) {
   return lensId === "original"
@@ -188,26 +167,6 @@ export default function SharePageClient({ postId }: { postId: string }) {
     return () => unsub();
   }, [postId, post]);
 
-  const sourcePost = extensionDeck?.sourcePost || {};
-  const sourceUrl = post?.sourceUrl || sourcePost.url || sourcePost.sourceUrl || "";
-  const sourcePlatform = post?.sourcePlatform || sourcePost.platform || "source";
-  const sourceLabel = platformLabel(sourcePlatform);
-  const sourceAuthor =
-    cleanText(post?.sourceAuthorName) ||
-    cleanText(post?.authorName) ||
-    cleanText(sourcePost.authorName) ||
-    cleanText(sourcePost.name) ||
-    sourceLabel;
-  const sourceHandle =
-    cleanText(post?.sourceAuthorHandle) ||
-    cleanText(post?.authorHandle) ||
-    cleanText(sourcePost.authorHandle) ||
-    cleanText(sourcePost.handle);
-  const sourceAvatar =
-    cleanText(post?.sourceAvatarUrl) ||
-    cleanText(sourcePost.avatarUrl) ||
-    cleanText(sourcePost.authorAvatarUrl) ||
-    cleanText(sourcePost.profileImageUrl);
 
   const deckTextByLens = useMemo(() => {
     if (extensionDeck) {
@@ -305,9 +264,6 @@ export default function SharePageClient({ postId }: { postId: string }) {
     );
   }
 
-  const sourceMeta = [sourceHandle ? `@${sourceHandle.replace(/^@/, "")}` : "", sourceLabel]
-    .filter(Boolean)
-    .join(" · ");
 
   return (
     <div className="min-h-screen bg-[#F7F0FF] text-[#0C0C12]">
@@ -337,51 +293,7 @@ export default function SharePageClient({ postId }: { postId: string }) {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-5 pb-14">
-        <section className="rounded-[36px] border border-[#E7D9FF] bg-white p-5 shadow-sm">
-          <div className="flex items-start gap-3">
-            {sourceAvatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={sourceAvatar}
-                alt=""
-                className="h-14 w-14 rounded-full border border-[#E7D9FF] object-cover"
-              />
-            ) : (
-              <div className="flex h-14 w-14 items-center justify-center rounded-full border border-[#E7D9FF] bg-[#F7F0FF] text-sm font-black text-[#4B2BCE]">
-                {initials(sourceAuthor)}
-              </div>
-            )}
-
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-xl font-black leading-tight">
-                  {sourceAuthor}
-                </h1>
-                <span className="rounded-full bg-[#EFE4FF] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#4B2BCE]">
-                  {sourceLabel}
-                </span>
-              </div>
-              {sourceMeta && (
-                <p className="mt-1 truncate text-xs font-bold text-[#7B728A]">
-                  {sourceMeta}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {sourceUrl && (
-            <a
-              href={sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 block truncate rounded-2xl border border-[#E7D9FF] bg-[#FBF8FF] px-4 py-3 text-xs font-bold text-[#4B2BCE] underline"
-            >
-              View original source
-            </a>
-          )}
-        </section>
-
-        <section className="mt-4 rounded-[36px] border border-[#E7D9FF] bg-white p-4 shadow-sm">
+        <section className="rounded-[36px] border border-[#E7D9FF] bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="inline-flex items-center gap-2 rounded-full bg-[#EFE4FF] px-4 py-2 text-sm font-black text-[#4B2BCE]">
               <span>{card.icon}</span>
@@ -459,24 +371,6 @@ export default function SharePageClient({ postId }: { postId: string }) {
               />
             ))}
           </div>
-        </section>
-
-        <section className="mt-4 rounded-[36px] bg-[#4B2BCE] p-6 text-white shadow-sm">
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/70">
-            Want the rest?
-          </p>
-          <h2 className="mt-3 text-4xl font-black leading-none tracking-[-0.04em]">
-            5 perspectives. 1 post.
-          </h2>
-          <p className="mt-4 text-sm font-bold leading-6 text-white/85">
-            FlipSide turns one post into multiple lenses so the argument feels less flat and harder to ignore.
-          </p>
-          <a
-            href="https://backroom.cloud"
-            className="mt-5 inline-flex h-12 w-full items-center justify-center rounded-full bg-white px-5 text-sm font-black text-[#2D176D]"
-          >
-            Try FlipSide
-          </a>
         </section>
       </main>
     </div>
