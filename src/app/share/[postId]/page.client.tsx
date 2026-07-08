@@ -18,6 +18,33 @@ type ShareExtensionDeck = {
   deck: Record<string, string>;
 };
 
+const LENS_ORDER: LensParam[] = [
+  "original",
+  "opposite",
+  "cynical",
+  "playful",
+  "bridge",
+  "calm",
+];
+
+const LENS_LABELS: Record<string, string> = {
+  original: "Original",
+  opposite: "Opposite",
+  cynical: "Cynical",
+  playful: "Satirical",
+  bridge: "Bridge",
+  calm: "Calm",
+};
+
+const LENS_ICONS: Record<string, string> = {
+  original: "●",
+  opposite: "↔",
+  cynical: "⌁",
+  playful: "✦",
+  bridge: "◇",
+  calm: "•",
+};
+
 function cleanText(value: unknown): string {
   return String(value || "").trim();
 }
@@ -32,6 +59,22 @@ function platformLabel(value: unknown): string {
   if (platform === "youtube") return "YouTube";
   if (platform === "reddit") return "Reddit";
   return platform ? platform.charAt(0).toUpperCase() + platform.slice(1) : "Source";
+}
+
+function initials(name?: string) {
+  const clean = cleanText(name);
+  if (!clean) return "FS";
+  return clean
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "FS";
+}
+
+function byLensUrl(postId: string, lensId: LensParam) {
+  return lensId === "original"
+    ? `/share/${postId}`
+    : `/share/${postId}?lens=${lensId}`;
 }
 
 export default function SharePageClient({ postId }: { postId: string }) {
@@ -145,61 +188,69 @@ export default function SharePageClient({ postId }: { postId: string }) {
     return () => unsub();
   }, [postId, post]);
 
-  const lensOptions = useMemo(
-    () => [
-      { id: "original" as LensParam, label: "Original", icon: undefined },
-      ...TIMELINE_LIST.map((item) => ({
-        id: item.id as LensParam,
-        label: item.label,
-        icon: item.icon,
-      })),
-    ],
-    []
-  );
+  const sourcePost = extensionDeck?.sourcePost || {};
+  const sourceUrl = post?.sourceUrl || sourcePost.url || sourcePost.sourceUrl || "";
+  const sourcePlatform = post?.sourcePlatform || sourcePost.platform || "source";
+  const sourceLabel = platformLabel(sourcePlatform);
+  const sourceAuthor =
+    cleanText(post?.sourceAuthorName) ||
+    cleanText(post?.authorName) ||
+    cleanText(sourcePost.authorName) ||
+    cleanText(sourcePost.name) ||
+    sourceLabel;
+  const sourceHandle =
+    cleanText(post?.sourceAuthorHandle) ||
+    cleanText(post?.authorHandle) ||
+    cleanText(sourcePost.authorHandle) ||
+    cleanText(sourcePost.handle);
+  const sourceAvatar =
+    cleanText(post?.sourceAvatarUrl) ||
+    cleanText(sourcePost.avatarUrl) ||
+    cleanText(sourcePost.authorAvatarUrl) ||
+    cleanText(sourcePost.profileImageUrl);
+
+  const deckTextByLens = useMemo(() => {
+    if (extensionDeck) {
+      return {
+        original:
+          cleanText(extensionDeck.deck?.original) ||
+          cleanText(extensionDeck.sourcePost?.text) ||
+          "Open the original source to view this post.",
+        calm: cleanText(extensionDeck.deck?.calm),
+        bridge: cleanText(extensionDeck.deck?.bridge),
+        cynical: cleanText(extensionDeck.deck?.cynical),
+        opposite: cleanText(extensionDeck.deck?.opposite),
+        playful: cleanText(extensionDeck.deck?.playful),
+      };
+    }
+
+    if (!post) {
+      return {
+        original: "",
+        calm: "",
+        bridge: "",
+        cynical: "",
+        opposite: "",
+        playful: "",
+      };
+    }
+
+    return {
+      original: cleanText(post.text),
+      calm: cleanText(rewrites.calm?.text) || "(Generating rewrite…)",
+      bridge: cleanText(rewrites.bridge?.text) || "(Generating rewrite…)",
+      cynical: cleanText(rewrites.cynical?.text) || "(Generating rewrite…)",
+      opposite: cleanText(rewrites.opposite?.text) || "(Generating rewrite…)",
+      playful: cleanText(rewrites.playful?.text) || "(Generating rewrite…)",
+    };
+  }, [extensionDeck, post, rewrites]);
 
   const card = useMemo(() => {
-    if (extensionDeck) {
-      if (lens === "original") {
-        return {
-          id: "original" as const,
-          label: "Original",
-          icon: undefined,
-          text:
-            cleanText(extensionDeck.deck?.original) ||
-            cleanText(extensionDeck.sourcePost?.text) ||
-            "Open the original source to view this post.",
-        };
-      }
-
-      const spec = TIMELINE_LIST.find((t) => t.id === lens);
-      return {
-        id: lens,
-        label: spec?.label ?? lens,
-        icon: spec?.icon,
-        text: cleanText(extensionDeck.deck?.[lens]) || "(Missing lens text.)",
-      };
-    }
-
-    if (!post) return null;
-
-    if (lens === "original") {
-      return {
-        id: "original" as const,
-        label: "Original",
-        icon: undefined,
-        text: post.text || "",
-      };
-    }
-
-    const spec = TIMELINE_LIST.find((t) => t.id === lens);
-    const rw = rewrites[lens];
-    return {
-      id: lens,
-      label: spec?.label ?? lens,
-      icon: spec?.icon,
-      text: rw?.text || "(Generating rewrite…)",
-    };
-  }, [post, extensionDeck, lens, rewrites]);
+    const label = LENS_LABELS[lens] ?? lens;
+    const icon = LENS_ICONS[lens];
+    const text = deckTextByLens[lens as keyof typeof deckTextByLens] || "";
+    return { id: lens, label, icon, text };
+  }, [deckTextByLens, lens]);
 
   const origin =
     typeof window !== "undefined" ? window.location.origin : "";
@@ -212,31 +263,41 @@ export default function SharePageClient({ postId }: { postId: string }) {
       ? `/post/${postId}`
       : `/share/${postId}`;
 
-  const displayDeckUrl = fullDeckUrl.replace(/^https?:\/\//, "");
-
-  const sourcePost = extensionDeck?.sourcePost || {};
-  const sourceUrl = post?.sourceUrl || sourcePost.url || sourcePost.sourceUrl || "";
-  const hasSource = !!sourceUrl;
-  const sourceLabel = platformLabel(post?.sourcePlatform || sourcePost.platform || "source");
+  const activeLensIndex = Math.max(0, LENS_ORDER.indexOf(lens));
+  const availableLensCount = LENS_ORDER.filter((id) => {
+    const text = deckTextByLens[id as keyof typeof deckTextByLens];
+    return cleanText(text).length > 0;
+  }).length;
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <p className="text-xs text-slate-500">Loading…</p>
+      <div className="min-h-screen bg-[#F7F0FF] flex items-center justify-center px-6 text-[#0C0C12]">
+        <div className="rounded-[32px] border border-[#E7D9FF] bg-white p-6 shadow-sm">
+          <p className="text-sm font-black">Loading Flip Deck…</p>
+          <p className="mt-1 text-xs font-semibold text-[#7B728A]">
+            Pulling the shared lenses into view.
+          </p>
+        </div>
       </div>
     );
   }
 
   if (!post && !extensionDeck) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-4">
-        <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-sm font-medium text-slate-900">
-            This share link is invalid, missing, or deleted.
+      <div className="min-h-screen bg-[#F7F0FF] flex flex-col items-center justify-center px-6 text-[#0C0C12]">
+        <div className="w-full max-w-xl rounded-[32px] border border-[#E7D9FF] bg-white p-6 shadow-sm">
+          <p className="text-lg font-black">
+            This Flip Deck is missing.
           </p>
-          <div className="mt-3">
-            <Link href="/feed" className="text-xs underline text-slate-800">
-              Back to feed
+          <p className="mt-2 text-sm font-semibold text-[#7B728A]">
+            The link may be invalid, expired, or deleted.
+          </p>
+          <div className="mt-5">
+            <Link
+              href="/feed"
+              className="inline-flex h-12 w-full items-center justify-center rounded-full bg-[#0C0C12] px-5 text-sm font-black text-white"
+            >
+              Open FlipSide
             </Link>
           </div>
         </div>
@@ -244,122 +305,179 @@ export default function SharePageClient({ postId }: { postId: string }) {
     );
   }
 
-  if (!card) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <p className="text-xs text-slate-500">Loading lens…</p>
-      </div>
-    );
-  }
+  const sourceMeta = [sourceHandle ? `@${sourceHandle.replace(/^@/, "")}` : "", sourceLabel]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
-      {/* Top bar */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center text-xs font-semibold">
-            FS
+    <div className="min-h-screen bg-[#F7F0FF] text-[#0C0C12]">
+      <header className="sticky top-0 z-20 border-b border-[#E7D9FF] bg-[#F7F0FF]/90 px-4 py-4 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0C0C12] text-sm font-black text-white shadow-sm">
+              FS
+            </div>
+            <div className="leading-tight">
+              <div className="text-lg font-black tracking-tight text-[#2D176D]">
+                FlipSide
+              </div>
+              <div className="text-xs font-bold text-[#7B728A]">
+                Shared Flip Deck
+              </div>
+            </div>
           </div>
-          <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold tracking-tight">
-              FlipSide
-            </span>
-            <span className="text-[10px] text-slate-500">
-              Shared Flip Deck
-            </span>
-          </div>
-        </div>
 
-        <Link
-          href="/feed"
-          className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-800 shadow-sm"
-        >
-          Open FlipSide
-        </Link>
+          <a
+            href="https://backroom.cloud"
+            className="inline-flex h-11 items-center justify-center rounded-full border border-[#DCCAFF] bg-white px-5 text-sm font-black text-[#1A1325] shadow-sm"
+          >
+            Open FlipSide
+          </a>
+        </div>
       </header>
 
-      {/* Share card */}
-      <main className="flex-1 px-4 py-6 flex justify-center">
-        <div className="w-full max-w-xl space-y-3">
-          {/* Lens badge row */}
+      <main className="mx-auto max-w-3xl px-4 py-5 pb-14">
+        <section className="rounded-[36px] border border-[#E7D9FF] bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            {sourceAvatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={sourceAvatar}
+                alt=""
+                className="h-14 w-14 rounded-full border border-[#E7D9FF] object-cover"
+              />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-full border border-[#E7D9FF] bg-[#F7F0FF] text-sm font-black text-[#4B2BCE]">
+                {initials(sourceAuthor)}
+              </div>
+            )}
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-xl font-black leading-tight">
+                  {sourceAuthor}
+                </h1>
+                <span className="rounded-full bg-[#EFE4FF] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#4B2BCE]">
+                  {sourceLabel}
+                </span>
+              </div>
+              {sourceMeta && (
+                <p className="mt-1 truncate text-xs font-bold text-[#7B728A]">
+                  {sourceMeta}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {sourceUrl && (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 block truncate rounded-2xl border border-[#E7D9FF] bg-[#FBF8FF] px-4 py-3 text-xs font-bold text-[#4B2BCE] underline"
+            >
+              View original source
+            </a>
+          )}
+        </section>
+
+        <section className="mt-4 rounded-[36px] border border-[#E7D9FF] bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 border border-slate-200 shadow-sm">
-              <span className="text-[11px] font-medium text-slate-700">
-                {card.icon && <span className="mr-1">{card.icon}</span>}
-                {card.label}
-              </span>
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#EFE4FF] px-4 py-2 text-sm font-black text-[#4B2BCE]">
+              <span>{card.icon}</span>
+              <span>{card.label}</span>
             </div>
 
             <a
               href={fullDeckUrl}
-              className="text-[11px] px-3 py-1 rounded-full bg-slate-900 text-white shadow-sm"
+              className="inline-flex h-11 items-center justify-center rounded-full bg-[#0C0C12] px-5 text-sm font-black text-white shadow-sm"
             >
-              Open full deck →
+              Full deck →
             </a>
           </div>
 
-          {/* Lens nav */}
-          <div className="flex flex-wrap gap-2">
-            {lensOptions.map((option) => {
-              const active = option.id === lens;
-              return (
-                <Link
-                  key={option.id}
-                  href={`/share/${postId}?lens=${option.id}`}
-                  className={[
-                    "rounded-full border px-3 py-1 text-[11px] font-medium shadow-sm",
-                    active
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700",
-                  ].join(" ")}
-                >
-                  {option.icon ? `${option.icon} ` : ""}
-                  {option.label}
-                </Link>
-              );
-            })}
+          <div className="mt-4 overflow-x-auto pb-1">
+            <div className="flex min-w-max gap-2">
+              {LENS_ORDER.map((lensId) => {
+                const active = lensId === lens;
+                const label = LENS_LABELS[lensId] ?? lensId;
+                const icon = LENS_ICONS[lensId] ?? "";
+                return (
+                  <Link
+                    key={lensId}
+                    href={byLensUrl(postId, lensId)}
+                    className={[
+                      "inline-flex h-11 items-center justify-center rounded-full border px-4 text-sm font-black shadow-sm transition",
+                      active
+                        ? "border-[#0C0C12] bg-[#0C0C12] text-white"
+                        : "border-[#E7D9FF] bg-white text-[#5E536D]",
+                    ].join(" ")}
+                  >
+                    <span className="mr-1.5">{icon}</span>
+                    {label}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Attribution */}
-          {hasSource && (
-            <div className="text-[11px] text-slate-500">
-              <span>This Flip was originally posted on {sourceLabel}: </span>
-              <a
-                href={sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline break-all"
-                title={sourceLabel}
-              >
-                {sourceUrl}
-              </a>
-            </div>
-          )}
-
-          {/* Main card */}
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="text-sm text-slate-900 whitespace-pre-wrap">
+          <article className="mt-4 rounded-[32px] border border-[#E7D9FF] bg-[#FBF8FF] p-6">
+            <p className="whitespace-pre-wrap text-[24px] font-black leading-[1.25] tracking-[-0.03em] text-[#111018] sm:text-[30px]">
               {card.text}
-            </div>
+            </p>
 
-            <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between gap-3">
-              <span className="text-[10px] text-slate-500">
-                See this post through five lenses on FlipSide.
-              </span>
-              <a
-                href={fullDeckUrl}
-                className="text-[11px] font-medium underline text-slate-800 break-all text-right"
-              >
-                {displayDeckUrl}
-              </a>
+            <div className="mt-6 border-t border-[#E7D9FF] pt-4">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7B728A]">
+                    Flipped via FlipSide
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-[#7B728A]">
+                    {availableLensCount || 6} perspectives. 1 post.
+                  </p>
+                </div>
+                <a
+                  href={fullDeckUrl}
+                  className="max-w-[52%] break-all text-right text-xs font-black text-[#2D176D] underline"
+                >
+                  Open full deck
+                </a>
+              </div>
             </div>
+          </article>
+
+          <div className="mt-4 flex items-center justify-center gap-2">
+            {LENS_ORDER.map((lensId, index) => (
+              <span
+                key={lensId}
+                className={[
+                  "h-2 rounded-full transition-all",
+                  index === activeLensIndex
+                    ? "w-8 bg-[#4B2BCE]"
+                    : "w-2 bg-[#DCCAFF]",
+                ].join(" ")}
+              />
+            ))}
           </div>
+        </section>
 
-          {/* Footer helper */}
-          <p className="text-[10px] text-slate-500">
-            Swipe the shared cards, or use the lens buttons above to open a specific perspective.
+        <section className="mt-4 rounded-[36px] bg-[#4B2BCE] p-6 text-white shadow-sm">
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/70">
+            Want the rest?
           </p>
-        </div>
+          <h2 className="mt-3 text-4xl font-black leading-none tracking-[-0.04em]">
+            5 perspectives. 1 post.
+          </h2>
+          <p className="mt-4 text-sm font-bold leading-6 text-white/85">
+            FlipSide turns one post into multiple lenses so the argument feels less flat and harder to ignore.
+          </p>
+          <a
+            href="https://backroom.cloud"
+            className="mt-5 inline-flex h-12 w-full items-center justify-center rounded-full bg-white px-5 text-sm font-black text-[#2D176D]"
+          >
+            Try FlipSide
+          </a>
+        </section>
       </main>
     </div>
   );
