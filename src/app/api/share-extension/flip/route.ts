@@ -335,6 +335,39 @@ function wordCount(value: string) {
   return value.trim().split(/\s+/).filter(Boolean).length;
 }
 
+function stripSharedUrlBoilerplate(value: string): string {
+  const raw = cleanText(value, 2200);
+  if (!raw) return "";
+
+  const withoutUrls = raw
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/www\.\S+/gi, " ")
+    .replace(/\b(?:threads\.net|x\.com|twitter\.com|bsky\.app)\S*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const boilerplatePatterns = [
+    /^shared\s+(?:a\s+)?post\s+from\s+threads\s*:?\s*/i,
+    /^check\s+out\s+this\s+post\s+on\s+threads\s*:?\s*/i,
+    /^view\s+on\s+threads\s*:?\s*/i,
+  ];
+
+  let cleaned = withoutUrls;
+  for (const pattern of boilerplatePatterns) {
+    cleaned = cleaned.replace(pattern, "").trim();
+  }
+
+  return cleaned;
+}
+
+function hasMeaningfulSharedText(value: string): boolean {
+  const cleaned = stripSharedUrlBoilerplate(value);
+  if (!cleaned) return false;
+
+  const alphaNumeric = cleaned.replace(/[^\p{L}\p{N}]+/gu, "");
+  return alphaNumeric.length >= 12 || wordCount(cleaned) >= 3;
+}
+
 function targetRange(text: string) {
   const wc = wordCount(text);
   const minWords = Math.max(5, Math.floor(wc * 0.65));
@@ -453,8 +486,25 @@ export async function POST(req: Request) {
 
     const origin = new URL(req.url).origin;
     const imported = url ? await hydrateSource(origin, url, sharedText) : null;
+
+    const platform =
+      imported?.platform ||
+      imported?.sourcePlatform ||
+      detectPlatform(url);
+
+    const cleanedSharedText = stripSharedUrlBoilerplate(sharedText);
+    const useSharedTextFirst =
+      platform === "threads" &&
+      hasMeaningfulSharedText(sharedText);
+
     const sourceText = cleanText(
-      imported?.text || imported?.sourceImportedText || imported?.description || sharedText,
+      useSharedTextFirst
+        ? cleanedSharedText
+        : imported?.text ||
+          imported?.sourceImportedText ||
+          imported?.description ||
+          cleanedSharedText ||
+          sharedText,
       2200
     );
 
@@ -463,7 +513,7 @@ export async function POST(req: Request) {
         ok: false,
         error: "Could not read text from the shared post.",
         sourcePost: {
-          platform: imported?.platform || imported?.sourcePlatform || detectPlatform(url),
+          platform:
           url,
           authorName: imported?.authorName || imported?.sourceAuthorName || null,
           authorHandle: imported?.authorHandle || imported?.sourceAuthorHandle || null,
@@ -497,12 +547,14 @@ export async function POST(req: Request) {
       promptVersion: "razor_edge_examples_v1",
       model: MODEL,
       sourcePost: {
-        platform: imported?.platform || imported?.sourcePlatform || detectPlatform(url),
+        platform,
         url: imported?.permalink || imported?.sourceUrl || url || null,
         authorName: imported?.authorName || imported?.sourceAuthorName || null,
         authorHandle: imported?.authorHandle || imported?.sourceAuthorHandle || null,
         text: sourceText,
-        importMethod: imported?.importMethod || (url ? "url_fallback" : "shared_text"),
+        importMethod: useSharedTextFirst
+          ? "ios_shared_text"
+          : imported?.importMethod || (url ? "url_fallback" : "shared_text"),
       },
       deck,
     };
