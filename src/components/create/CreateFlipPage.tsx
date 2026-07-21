@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -49,6 +49,8 @@ export default function CreateFlipPage() {
   const [user, setUser] = useState<any>(null);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [mode] = useState<FlipMode>("ai");
+  const [progressMessage, setProgressMessage] = useState("");
+  const submitLockRef = useRef(false);
 
   const router = useRouter();
 
@@ -57,10 +59,50 @@ export default function CreateFlipPage() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    if (!busy) {
+      setProgressMessage("");
+      return;
+    }
+
+    setProgressMessage("Analyzing your post...");
+    const generatingTimer = window.setTimeout(
+      () => setProgressMessage("Generating perspectives..."),
+      2500
+    );
+    const rankingTimer = window.setTimeout(
+      () => setProgressMessage("Ranking the strongest versions..."),
+      7000
+    );
+    const slowTimer = window.setTimeout(
+      () => setProgressMessage("This is taking a little longer than usual. We’re still working on it."),
+      14000
+    );
+
+    return () => {
+      window.clearTimeout(generatingTimer);
+      window.clearTimeout(rankingTimer);
+      window.clearTimeout(slowTimer);
+    };
+  }, [busy]);
+
+  useEffect(() => {
+    if (!busy) return;
+
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [busy]);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!text.trim() || busy) return;
+    if (!text.trim() || busy || submitLockRef.current) return;
 
+    submitLockRef.current = true;
     setBusy(true);
     setError(null);
 
@@ -71,6 +113,7 @@ export default function CreateFlipPage() {
           new URL(urlTrimmed);
         } catch {
           setError("That link doesn't look valid. Please paste a full URL.");
+          submitLockRef.current = false;
           setBusy(false);
           return;
         }
@@ -109,9 +152,13 @@ export default function CreateFlipPage() {
       });
 
       if (mode === "ai") {
+        const idToken = await u.getIdToken();
         const res = await fetch("/api/flip", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
           body: JSON.stringify({
             postId: postRef.id,
             text: text.trim(),
@@ -120,7 +167,23 @@ export default function CreateFlipPage() {
 
         const json = await res.json().catch(() => null);
         if (!res.ok || !json?.ok) {
-          console.error("Error generating rewrites:", json ?? (await res.text()));
+          const apiMessage =
+            typeof json?.error?.message === "string"
+              ? json.error.message
+              : typeof json?.error === "string"
+                ? json.error
+                : null;
+          const message =
+            apiMessage || "The perspectives could not be generated. Please try again.";
+          console.error("Error generating rewrites:", {
+            status: res.status,
+            code: json?.error?.code,
+            response: json,
+          });
+          setError(message);
+          submitLockRef.current = false;
+          setBusy(false);
+          return;
         }
 
         router.push(`/post/${postRef.id}`);
@@ -131,6 +194,7 @@ export default function CreateFlipPage() {
     } catch (err) {
       console.error("Error creating flip:", err);
       setError("Something went wrong creating your flip. Please try again.");
+      submitLockRef.current = false;
       setBusy(false);
     }
   }
@@ -161,8 +225,18 @@ export default function CreateFlipPage() {
         </div>
 
         <Button type="submit" loading={busy} disabled={!canSubmit} className="w-full">
-          Flip it
+          {busy ? "Creating your Flip" : "Flip it"}
         </Button>
+
+        {busy && progressMessage && (
+          <div
+            className="rounded-[var(--radius-card)] border border-neutral-200 bg-neutral-50 px-4 py-3 text-center text-sm font-medium text-neutral-700"
+            role="status"
+            aria-live="polite"
+          >
+            {progressMessage}
+          </div>
+        )}
 
         <div className="rounded-[var(--radius-card)] border border-neutral-200 bg-white p-4 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Try one</div>
@@ -209,7 +283,18 @@ export default function CreateFlipPage() {
           )}
         </div>
 
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        {error && (
+          <div className="rounded-[var(--radius-card)] border border-red-200 bg-red-50 px-4 py-3">
+            <p className="text-sm font-medium text-red-700">{error}</p>
+            <button
+              type="submit"
+              disabled={!text.trim() || busy}
+              className="mt-3 rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Try again
+            </button>
+          </div>
+        )}
 
         {showSignInBox && (
           <div className="flex items-center justify-between rounded-[var(--radius-card)] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm">
