@@ -15,6 +15,7 @@ import {
   serverTimestamp,
   Timestamp,
   doc,
+  getDoc,
   setDoc,
 } from "firebase/firestore";
 
@@ -34,12 +35,16 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+let googleSignInPromise: Promise<User> | null = null;
+
 // --- Helper: ensure user profile doc exists/updated ---
 // Stored at: users/{uid}
 export async function ensureUserProfile(user: User | null | undefined) {
   if (!user) return;
 
   const userRef = doc(db, "users", user.uid);
+
+  const existingProfile = await getDoc(userRef);
 
   await setDoc(
     userRef,
@@ -49,8 +54,7 @@ export async function ensureUserProfile(user: User | null | undefined) {
       email: user.email ?? "",
       photoURL: user.photoURL ?? "",
       updatedAt: serverTimestamp(),
-      // createdAt will only be set the first time due to merge:true
-      createdAt: serverTimestamp(),
+      ...(existingProfile.exists() ? {} : { createdAt: serverTimestamp() }),
     },
     { merge: true }
   );
@@ -64,10 +68,20 @@ export async function loginAnonymously() {
 
 // --- Helper: Google sign-in + profile bootstrap ---
 export async function loginWithGoogle() {
-  const provider = new GoogleAuthProvider();
-  const result = await signInWithPopup(auth, provider);
-  await ensureUserProfile(result.user);
-  return result.user;
+  if (googleSignInPromise) return googleSignInPromise;
+
+  googleSignInPromise = (async () => {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    await ensureUserProfile(result.user);
+    return result.user;
+  })();
+
+  try {
+    return await googleSignInPromise;
+  } finally {
+    googleSignInPromise = null;
+  }
 }
 
 // --- Helper: logout ---

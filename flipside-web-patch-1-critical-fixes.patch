@@ -1,0 +1,111 @@
+diff -ruN '--exclude=flipside-web-cleanup.patch' a/firestore.rules b/firestore.rules
+--- a/firestore.rules	2026-07-21 14:43:44.430595833 +0000
++++ b/firestore.rules	2026-07-21 14:43:45.554845840 +0000
+@@ -20,6 +20,11 @@
+         && request.resource.data.authorId == request.auth.uid;
+     }
+ 
++    function ownsPost(postId) {
++      return signedIn()
++        && get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid;
++    }
++
+     // User profiles
+     match /users/{userId} {
+       allow read: if true;
+@@ -33,10 +38,28 @@
+       allow create: if isIncomingPostOwner();
+       allow update, delete: if isPostOwner();
+ 
+-      // AI generations and lens candidates attached to a post.
+-      match /{subcollection}/{docId} {
++      // Published lens rewrites are readable with the parent post, but only
++      // trusted backend code may create or change them.
++      match /rewrites/{rewriteId} {
+         allow read: if true;
+-        allow create, update, delete: if signedIn();
++        allow create, update, delete: if false;
++      }
++
++      // Generation diagnostics and candidate-ranking data are private to the
++      // post owner and are written only by trusted backend code.
++      match /generationRuns/{runId} {
++        allow read: if ownsPost(postId);
++        allow create, update, delete: if false;
++
++        match /candidates/{candidateId} {
++          allow read: if ownsPost(postId);
++          allow create, update, delete: if false;
++        }
++      }
++
++      // Deny any future post subcollection unless it is explicitly reviewed.
++      match /{subcollection}/{docId} {
++        allow read, write: if false;
+       }
+     }
+ 
+diff -ruN '--exclude=flipside-web-cleanup.patch' a/src/app/firebase.ts b/src/app/firebase.ts
+--- a/src/app/firebase.ts	2026-07-21 14:43:44.444631725 +0000
++++ b/src/app/firebase.ts	2026-07-21 14:43:45.554625339 +0000
+@@ -15,6 +15,7 @@
+   serverTimestamp,
+   Timestamp,
+   doc,
++  getDoc,
+   setDoc,
+ } from "firebase/firestore";
+ 
+@@ -41,6 +42,8 @@
+ 
+   const userRef = doc(db, "users", user.uid);
+ 
++  const existingProfile = await getDoc(userRef);
++
+   await setDoc(
+     userRef,
+     {
+@@ -49,8 +52,7 @@
+       email: user.email ?? "",
+       photoURL: user.photoURL ?? "",
+       updatedAt: serverTimestamp(),
+-      // createdAt will only be set the first time due to merge:true
+-      createdAt: serverTimestamp(),
++      ...(existingProfile.exists() ? {} : { createdAt: serverTimestamp() }),
+     },
+     { merge: true }
+   );
+diff -ruN '--exclude=flipside-web-cleanup.patch' a/src/components/create/CreateFlipPage.tsx b/src/components/create/CreateFlipPage.tsx
+--- a/src/components/create/CreateFlipPage.tsx	2026-07-21 14:43:44.454755856 +0000
++++ b/src/components/create/CreateFlipPage.tsx	2026-07-21 14:43:45.554293019 +0000
+@@ -109,9 +109,13 @@
+       });
+ 
+       if (mode === "ai") {
++        const idToken = await u.getIdToken();
+         const res = await fetch("/api/flip", {
+           method: "POST",
+-          headers: { "Content-Type": "application/json" },
++          headers: {
++            "Content-Type": "application/json",
++            Authorization: `Bearer ${idToken}`,
++          },
+           body: JSON.stringify({
+             postId: postRef.id,
+             text: text.trim(),
+@@ -120,7 +124,14 @@
+ 
+         const json = await res.json().catch(() => null);
+         if (!res.ok || !json?.ok) {
+-          console.error("Error generating rewrites:", json ?? (await res.text()));
++          const message =
++            typeof json?.error === "string"
++              ? json.error
++              : "The perspectives could not be generated. Please try again.";
++          console.error("Error generating rewrites:", json);
++          setError(message);
++          setBusy(false);
++          return;
+         }
+ 
+         router.push(`/post/${postRef.id}`);

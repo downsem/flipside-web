@@ -20,6 +20,11 @@ service cloud.firestore {
         && request.resource.data.authorId == request.auth.uid;
     }
 
+    function ownsPost(postId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid;
+    }
+
     // User profiles
     match /users/{userId} {
       allow read: if true;
@@ -33,10 +38,28 @@ service cloud.firestore {
       allow create: if isIncomingPostOwner();
       allow update, delete: if isPostOwner();
 
-      // AI generations and lens candidates attached to a post.
-      match /{subcollection}/{docId} {
+      // Published lens rewrites are readable with the parent post, but only
+      // trusted backend code may create or change them.
+      match /rewrites/{rewriteId} {
         allow read: if true;
-        allow create, update, delete: if signedIn();
+        allow create, update, delete: if false;
+      }
+
+      // Generation diagnostics and candidate-ranking data are private to the
+      // post owner and are written only by trusted backend code.
+      match /generationRuns/{runId} {
+        allow read: if ownsPost(postId);
+        allow create, update, delete: if false;
+
+        match /candidates/{candidateId} {
+          allow read: if ownsPost(postId);
+          allow create, update, delete: if false;
+        }
+      }
+
+      // Deny any future post subcollection unless it is explicitly reviewed.
+      match /{subcollection}/{docId} {
+        allow read, write: if false;
       }
     }
 

@@ -8,7 +8,24 @@ function getServiceAccount() {
     );
   }
 
-  const parsed = JSON.parse(raw);
+  let parsed: Record<string, unknown>;
+
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch (error) {
+    throw new Error(
+      "FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON. Download a fresh Firebase Admin SDK service account JSON file and store it as a single-line JSON string in your environment variables.",
+      { cause: error }
+    );
+  }
+
+  for (const field of ["project_id", "private_key", "client_email"]) {
+    if (!parsed[field]) {
+      throw new Error(
+        `FIREBASE_SERVICE_ACCOUNT_JSON is missing required field '${field}'.`
+      );
+    }
+  }
 
   if (parsed.private_key && typeof parsed.private_key === "string") {
     parsed.private_key = parsed.private_key.replace(/\\n/g, "\n");

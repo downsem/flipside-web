@@ -323,8 +323,67 @@ const CANDIDATES_PER_LENS = Math.max(
   Math.min(4, Number(process.env.FLIPSIDE_CANDIDATES_PER_LENS || 3))
 );
 
+type ApiErrorCode =
+  | "BAD_REQUEST"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "NOT_FOUND"
+  | "RATE_LIMITED"
+  | "SERVICE_UNAVAILABLE"
+  | "SERVER_CONFIGURATION"
+  | "INTERNAL_ERROR";
+
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, { status });
+}
+
+function errorResponse(
+  code: ApiErrorCode,
+  message: string,
+  status: number,
+  extra: Record<string, unknown> = {}
+) {
+  return jsonResponse(
+    {
+      ok: false,
+      error: { code, message },
+      ...extra,
+    },
+    status
+  );
+}
+
+function normalizeFatalError(err: unknown) {
+  const value = err as {
+    status?: number;
+    code?: string;
+    type?: string;
+    message?: string;
+  };
+  const status = Number(value?.status || 0);
+  const code = String(value?.code || value?.type || "").toLowerCase();
+
+  if (status === 429 || code.includes("rate_limit") || code.includes("insufficient_quota")) {
+    return {
+      code: "RATE_LIMITED" as const,
+      message: "FlipSide is temporarily at capacity. Please try again shortly.",
+      status: 429,
+    };
+  }
+
+  if (status >= 500 || code.includes("timeout") || code.includes("connection")) {
+    return {
+      code: "SERVICE_UNAVAILABLE" as const,
+      message: "Perspective generation is temporarily unavailable. Please try again.",
+      status: 503,
+    };
+  }
+
+  return {
+    code: "INTERNAL_ERROR" as const,
+    message: "The perspectives could not be generated. Please try again.",
+    status: 500,
+  };
 }
 
 function wordCount(value: string) {
@@ -784,32 +843,32 @@ export async function POST(req: Request) {
     const text = typeof body?.text === "string" ? body.text.trim() : "";
 
     if (!postId || !text) {
-      return jsonResponse({ ok: false, error: "Missing postId or text", details: [] }, 400);
+      return errorResponse("BAD_REQUEST", "A post and text are required.", 400, { details: [] });
     }
 
     if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-      return jsonResponse({ ok: false, error: "Missing FIREBASE_SERVICE_ACCOUNT_JSON", details: [] }, 500);
+      return errorResponse("SERVER_CONFIGURATION", "FlipSide is not configured to generate perspectives.", 500, { details: [] });
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return jsonResponse({ ok: false, error: "Missing OPENAI_API_KEY", details: [] }, 500);
+      return errorResponse("SERVER_CONFIGURATION", "FlipSide is not configured to generate perspectives.", 500, { details: [] });
     }
 
     const decoded = await verifyRequestUser(req);
     if (!decoded?.uid) {
-      return jsonResponse({ ok: false, error: "Unauthorized. Sign in again and retry.", details: [] }, 401);
+      return errorResponse("UNAUTHORIZED", "Please sign in again and retry.", 401, { details: [] });
     }
 
     const adminDb = getAdminDb();
     const postRef = adminDb.collection("posts").doc(postId);
     const postSnap = await postRef.get();
     if (!postSnap.exists) {
-      return jsonResponse({ ok: false, error: "Post not found", details: [] }, 404);
+      return errorResponse("NOT_FOUND", "That post could not be found.", 404, { details: [] });
     }
 
     const post = postSnap.data() || {};
     if (post.authorId && post.authorId !== decoded.uid) {
-      return jsonResponse({ ok: false, error: "You can only generate lenses for your own posts.", details: [] }, 403);
+      return errorResponse("FORBIDDEN", "You can only generate perspectives for your own posts.", 403, { details: [] });
     }
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -1068,16 +1127,12 @@ export async function POST(req: Request) {
       generationRunId: runRef.id,
       latencyMs,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[/api/flip] Fatal error:", err);
-    return jsonResponse(
-      {
-        ok: false,
-        partialFailure: true,
-        details: [],
-        error: err?.message ?? "Internal error generating rewrites",
-      },
-      500
-    );
+    const normalized = normalizeFatalError(err);
+    return errorResponse(normalized.code, normalized.message, normalized.status, {
+      partialFailure: true,
+      details: [],
+    });
   }
 }
